@@ -8,7 +8,7 @@ User=bitharbor
 Group=bitharbor
 WorkingDirectory=/home/ethan/documents/bitharbor
 Environment="BIT_HARBOR_CONFIG=/etc/bitharbor/config.yaml"
-ExecStart=/opt/bitharbor/venv/bin/uvicorn bitharbor.main:app --host 0.0.0.0 --port 8080
+ExecStart=/opt/bitharbor/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8080
 Restart=on-failure
 RestartSec=5
 KillMode=control-group

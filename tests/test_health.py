@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 from httpx import AsyncClient
 
-from bitharbor.main import create_app
-from bitharbor.settings import get_settings
+from app.main import create_app
+from app.settings import get_settings
 
 
 @pytest.mark.asyncio
@@ -15,7 +15,7 @@ async def test_healthcheck(tmp_path, monkeypatch):
     db_path = tmp_path / "db.sqlite"
 
     monkeypatch.setenv("BITHARBOR_SERVER__DATA_ROOT", str(data_root))
-    monkeypatch.setenv("BITHARBOR_ANN__INDEX_PATH", str(index_root / "hnsw.index"))
+    monkeypatch.setenv("BITHARBOR_ANN__INDEX_DIRECTORY", str(index_root))
     monkeypatch.setenv("BITHARBOR_ANN__VECTORS_PATH", str(index_root / "vectors.fp32"))
     monkeypatch.setenv("BITHARBOR_DB__URL", f"sqlite+aiosqlite:///{db_path}")
 

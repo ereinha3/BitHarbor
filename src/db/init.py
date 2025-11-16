@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from bitharbor.db.base import Base
-from bitharbor.db.session import engine
+from db.base import Base
+from db.session import engine
 
 
 async def init_db(custom_engine: AsyncEngine | None = None) -> None:

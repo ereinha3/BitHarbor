@@ -71,6 +71,6 @@ ignore = [
 ]
 
 [tool.ruff.isort]
-known-first-party = ["bitharbor"]
+known-first-party = ["app", "api", "db", "domain", "features", "infrastructure", "utils"]
 profile = "black"
 

@@ -33,7 +33,7 @@ sudo cp config.example.yaml /etc/bitharbor/config.yaml
 
 ### Running the API
 ```bash
-BIT_HARBOR_CONFIG=/etc/bitharbor/config.yaml uvicorn bitharbor.main:app --host 0.0.0.0 --port 8080
+BIT_HARBOR_CONFIG=/etc/bitharbor/config.yaml uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
 
 Health probe:
