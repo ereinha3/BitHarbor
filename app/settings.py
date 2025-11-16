@@ -1,14 +1,17 @@
 from __future__ import annotations
 
-import secrets
-from functools import lru_cache
 import os
+import secrets
 from pathlib import Path
+from functools import lru_cache
 from typing import Literal
 
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
+load_dotenv()
 
 _DEFAULT_DATA_ROOT = Path(
     os.getenv("BITHARBOR_DATA_ROOT")
@@ -67,6 +70,7 @@ class EmbeddingSettings(BaseModel):
 class AnnSettings(BaseModel):
     backend: Literal["diskann"] = "diskann"
     metric: Literal["cosine", "l2", "mips"] = "cosine"
+    enabled: bool = False
     graph_degree: int = 64
     complexity: int = 100
     search_memory_budget: float = 2.0  # GB
@@ -84,6 +88,11 @@ class IngestSettings(BaseModel):
     }
     thumb_width: int = 512
     preview_seconds: int = 3
+
+
+class InternetArchiveSettings(BaseModel):
+    email: str = ""
+    password: str = ""
 
 
 class TMDbSettings(BaseModel):
@@ -106,6 +115,7 @@ class AppSettings(BaseSettings):
     embedding: EmbeddingSettings = EmbeddingSettings()
     ann: AnnSettings = AnnSettings()
     ingest: IngestSettings = IngestSettings()
+    internet_archive: InternetArchiveSettings = InternetArchiveSettings()
     tmdb: TMDbSettings = TMDbSettings()
 
     def ensure_directories(self) -> None:
@@ -119,6 +129,26 @@ class AppSettings(BaseSettings):
 @lru_cache()
 def get_settings() -> AppSettings:
     settings = AppSettings()
+
+    # Fallback to legacy environment variables for TMDb credentials
+    if not settings.tmdb.api_key:
+        legacy_api_key = os.getenv("TMDB_API_KEY")
+        if legacy_api_key:
+            settings.tmdb.api_key = legacy_api_key
+    if not settings.tmdb.access_token:
+        legacy_access_token = os.getenv("TMDB_ACCESS_TOKEN")
+        if legacy_access_token:
+            settings.tmdb.access_token = legacy_access_token
+
+    if not settings.internet_archive.email:
+        legacy_email = os.getenv("INTERNET_ARCHIVE_EMAIL")
+        if legacy_email:
+            settings.internet_archive.email = legacy_email
+    if not settings.internet_archive.password:
+        legacy_password = os.getenv("INTERNET_ARCHIVE_PASSWORD")
+        if legacy_password:
+            settings.internet_archive.password = legacy_password
+
     settings.ensure_directories()
     return settings
 

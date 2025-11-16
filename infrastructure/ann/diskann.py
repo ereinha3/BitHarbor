@@ -23,6 +23,7 @@ class DiskAnnIndex:
         self.dim = dim
         self.index_directory = index_directory
         self.metric = metric
+        self._dap_metric = "l2" if metric == "cosine" else metric
         self.graph_degree = graph_degree
         self.complexity = complexity
         self.search_memory_budget = search_memory_budget
@@ -55,9 +56,14 @@ class DiskAnnIndex:
             shutil.rmtree(self.index_directory)
         self.index_directory.mkdir(parents=True, exist_ok=True)
 
+        if self.metric == "cosine":
+            norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+            safe_norms = np.where(norms == 0.0, 1.0, norms)
+            vectors = vectors / safe_norms
+
         dap.build_disk_index(
             data=vectors,
-            distance_metric=self.metric,
+            distance_metric=self._dap_metric,
             index_directory=str(self.index_directory),
             complexity=self.complexity,
             graph_degree=self.graph_degree,
@@ -71,7 +77,7 @@ class DiskAnnIndex:
             index_directory=str(self.index_directory),
             num_threads=self.num_threads,
             num_nodes_to_cache=0,
-            distance_metric=self.metric,
+            distance_metric=self._dap_metric,
             vector_dtype=np.float32,
         )
 
@@ -84,7 +90,7 @@ class DiskAnnIndex:
             index_directory=str(self.index_directory),
             num_threads=self.num_threads,
             num_nodes_to_cache=0,
-            distance_metric=self.metric,
+            distance_metric=self._dap_metric,
             vector_dtype=np.float32,
         )
 

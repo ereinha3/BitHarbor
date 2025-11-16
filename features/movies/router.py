@@ -6,11 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.session import get_session
-from domain.catalog import (
-    CatalogDownloadRequest,
-    CatalogDownloadResponse,
-    CatalogMatchResponse,
-)
+from domain.catalog import CatalogDownloadRequest, CatalogDownloadResponse, CatalogMatchResponse
+from domain.search import LocalMovieSearchResponse
 
 from .download import (
     CatalogMatchNotFoundError,
@@ -18,6 +15,10 @@ from .download import (
     get_movie_catalog_download_service,
 )
 from .ingest import ingest_catalog_movie
+from .local_search import (
+    MovieLocalSearchService,
+    get_movie_local_search_service,
+)
 from .search import (
     MovieCatalogSearchService,
     get_movie_catalog_search_service,
@@ -40,6 +41,22 @@ async def search_catalog_movies(
         return await search_service.search(query=query, limit=limit, year=year)
     except RuntimeError as exc:  # missing TMDb creds
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/search/local", response_model=LocalMovieSearchResponse)
+async def search_local_movies(
+    query: str = Query(..., min_length=1, description="Search term for local library"),
+    limit: int = Query(10, ge=1, le=50),
+    min_score: float | None = Query(
+        0.2,
+        ge=0.0,
+        le=1.0,
+        description="Minimum cosine similarity score required for a hit (0-1).",
+    ),
+    session: AsyncSession = Depends(get_session),
+    search_service: MovieLocalSearchService = Depends(get_movie_local_search_service),
+) -> LocalMovieSearchResponse:
+    return await search_service.search(session=session, query=query, limit=limit, min_score=min_score)
 
 
 @router.post("/catalog/download", response_model=CatalogDownloadResponse)

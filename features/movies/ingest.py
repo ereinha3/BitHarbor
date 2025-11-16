@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.settings import get_settings
-from db.models import Movie
+from db.models import IdMap, Movie
 from features.movies.vector_index import append as append_vector
 from infrastructure.embedding.sentence_bert_service import get_sentence_bert_service
 from utils.hashing import blake3_file
@@ -146,6 +146,15 @@ async def ingest_catalog_movie(
     )
     session.add(movie)
     await session.flush()
+
+    if vector_row_id is not None:
+        session.add(
+            IdMap(
+                row_id=vector_row_id,
+                vector_hash=embedding.vector_hash,
+                media_id=str(movie.id),
+            )
+        )
 
     return MovieIngestResult(
         file_hash=file_hash,

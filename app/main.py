@@ -36,7 +36,11 @@ def create_app() -> FastAPI:
         logger.info("BitHarbor backend starting up.")
         await init_db()
         logger.info("Database schema ensured.")
-        get_ann_service()
+        if settings.ann.enabled:
+            try:
+                get_ann_service()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("ANN service initialisation failed: %s", exc, exc_info=True)
 
     @app.on_event("shutdown")
     async def on_shutdown() -> None:

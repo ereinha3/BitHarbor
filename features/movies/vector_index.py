@@ -31,11 +31,23 @@ _index_directory = _movie_root / "diskann"
 _index_directory.mkdir(parents=True, exist_ok=True)
 
 _vector_store = VectorStore(_vectors_path, dim=_dim)
-_diskann_index = None
 
 
-def _ensure_index_built() -> None:
-    return None
+# DiskANN integration is currently disabled in this environment.  The vector
+# store still persists embeddings, and we perform exact cosine search in
+# Python.  Once DiskANN is ready, this module can be swapped to call into the
+# high-performance index again.
+
+
+def _normalize_vectors(vectors: np.ndarray) -> np.ndarray:
+    """Return a copy of ``vectors`` with rows L2-normalised."""
+
+    if vectors.size == 0:
+        return vectors
+    norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+    # Avoid divide-by-zero – leave zero vectors untouched.
+    safe_norms = np.where(norms == 0.0, 1.0, norms)
+    return vectors / safe_norms
 
 
 def append(vector: np.ndarray) -> int:
@@ -45,5 +57,29 @@ def append(vector: np.ndarray) -> int:
 
 
 def search(vector: np.ndarray, k: int) -> Tuple[np.ndarray, np.ndarray]:
-    return np.array([]), np.array([])
+    """Return the top ``k`` cosine-similar rows for ``vector``."""
+
+    if k <= 0:
+        return np.empty((0,), dtype=np.int64), np.empty((0,), dtype=np.float32)
+
+    stored = _vector_store.read_all()
+    if stored.size == 0:
+        return np.empty((0,), dtype=np.int64), np.empty((0,), dtype=np.float32)
+
+    # Normalise stored vectors once for cosine similarity.
+    stored = stored.astype(np.float32, copy=False)
+    stored_normalised = _normalize_vectors(stored)
+
+    query = np.asarray(vector, dtype=np.float32)
+    if query.ndim > 1:
+        query = query.ravel()
+    query_norm = np.linalg.norm(query)
+    if query_norm == 0:
+        return np.empty((0,), dtype=np.int64), np.empty((0,), dtype=np.float32)
+    query_normalised = query / query_norm
+
+    similarities = stored_normalised @ query_normalised
+    order = np.argsort(similarities)[::-1]
+    top_k = order[: min(k, similarities.shape[0])]
+    return top_k.astype(np.int64), similarities[top_k].astype(np.float32)
 

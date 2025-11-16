@@ -18,20 +18,20 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
-from dotenv import load_dotenv
 import internetarchive as ia
 from internetarchive import ArchiveSession, Item, configure
 
+from app.settings import get_settings
 from domain.media.movies import MovieMedia
 
 from .metadata_mapper import map_metadata_to_movie
-load_dotenv()
 
 logger = logging.getLogger(__name__)
 
 CONFIG_FILE = Path(os.getenv("HOME", "")) / ".config" / "internetarchive" / "config"
-IA_EMAIL = os.getenv("INTERNET_ARCHIVE_EMAIL")
-IA_PASSWORD = os.getenv("INTERNET_ARCHIVE_PASSWORD")
+_settings = get_settings()
+IA_EMAIL = _settings.internet_archive.email
+IA_PASSWORD = _settings.internet_archive.password
 
 VIDEO_EXTENSIONS = (".mp4", ".mkv", ".mov", ".avi", ".mpg", ".mpeg", ".webm")
 SUBTITLE_EXTENSIONS = (".srt", ".vtt")
