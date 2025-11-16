@@ -2,7 +2,6 @@ from __future__ import annotations
 from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
-MediaTypeLiteral = Literal["movie", "tv", "music", "podcast", "video", "personal"]
 SourceTypeLiteral = Literal["catalog", "home"]
 
 class ImageMetadata(BaseModel):
@@ -16,11 +15,10 @@ class ImageMetadata(BaseModel):
 class BaseMedia(BaseModel):
     """Base media model."""
 
-    file_hash: str = Field(..., description="File hash")
-    embedding_hash: str = Field(..., description="Embedding hash")
-    path: str = Field(..., description="File path")
-    type: MediaTypeLiteral = Field(..., description="Media type")
+    file_hash: Optional[str] = Field(None, description="File hash")
+    embedding_hash: Optional[str] = Field(None, description="Embedding hash")
+    path: Optional[str] = Field(None, description="File path")
     format: Optional[str] = Field(None, description="File format/extension")
-
+    media_type: Optional[str] = Field(None, description="Logical media type (movie, tv, etc.)")
     poster: Optional[ImageMetadata] = Field(None, description="Primary poster image path")
     backdrop: Optional[ImageMetadata] = Field(None, description="Primary backdrop image path")

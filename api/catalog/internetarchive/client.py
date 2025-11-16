@@ -22,6 +22,9 @@ from dotenv import load_dotenv
 import internetarchive as ia
 from internetarchive import ArchiveSession, Item, configure
 
+from domain.media.movies import MovieMedia
+
+from .metadata_mapper import map_metadata_to_movie
 load_dotenv()
 
 logger = logging.getLogger(__name__)
@@ -79,6 +82,7 @@ class MovieAssetBundle:
     cover_art_path: Path | None
     metadata_xml_path: Path | None
     subtitle_paths: tuple[Path, ...]
+    normalized_metadata: MovieMedia | None = None
 
 
 class InternetArchiveDownloadError(RuntimeError):
@@ -210,6 +214,7 @@ class InternetArchiveClient:
             cover_art_path=local_path(cover_art_file),
             metadata_xml_path=local_path(metadata_xml_file),
             subtitle_paths=subtitle_paths,
+            normalized_metadata=map_metadata_to_movie(identifier, metadata),
         )
 
     def collect_movie_assets(

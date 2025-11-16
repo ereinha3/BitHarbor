@@ -1,11 +1,9 @@
 from __future__ import annotations
-from typing import Optional
-from pydantic import BaseModel, Field
 from datetime import datetime
+from typing import Optional
 
+from pydantic import Field
 
-from .shared.person import CastMember, CrewMember
-from .shared.image import ImageMedia
 from .base import BaseMedia
 
 class MovieMedia(BaseMedia):
