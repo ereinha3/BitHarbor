@@ -69,7 +69,7 @@ class MovieCatalogSearchService:
         ia_movies = self.ia_client.search_movies(
             query,
             limit=max(limit * 3, 5),
-            sorts=None,
+            sorts=["num_favorites desc", "downloads desc"],
             filters=None,
         )
 

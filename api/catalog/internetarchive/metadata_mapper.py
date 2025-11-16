@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
 import html
 import re
-from typing import Any, Iterable, Mapping
+from datetime import datetime
+from typing import Any, Iterable, Mapping, Optional
 
 from domain.media.movies import MovieMedia
 
@@ -119,6 +119,13 @@ def _parse_cast(raw: Any) -> list[str] | None:
     return cast or None
 
 
+def _safe_int(value: Any) -> Optional[int]:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def map_metadata_to_movie(identifier: str, payload: Mapping[str, Any]) -> MovieMedia:
     """Coerce Internet Archive item metadata into ``MovieMedia``."""
 
@@ -138,10 +145,10 @@ def map_metadata_to_movie(identifier: str, payload: Mapping[str, Any]) -> MovieM
     rating = meta.get("rating") or meta.get("licenseurl")
 
     downloads_raw = meta.get("downloads") or payload.get("downloads")
-    try:
-        download_count = int(downloads_raw) if downloads_raw is not None else None
-    except (TypeError, ValueError):
-        download_count = None
+    favorites_raw = meta.get("num_favorites") or payload.get("num_favorites")
+    download_count = _safe_int(downloads_raw)
+    favorites_count = _safe_int(favorites_raw)
+    catalog_score = favorites_count if favorites_count is not None else download_count
 
     movie = MovieMedia(
         file_hash=None,
@@ -166,7 +173,7 @@ def map_metadata_to_movie(identifier: str, payload: Mapping[str, Any]) -> MovieM
         catalog_source="internet_archive",
         catalog_id=identifier,
         catalog_downloads=download_count,
-        catalog_score=float(download_count) if download_count is not None else None,
+        catalog_score=float(catalog_score) if catalog_score is not None else None,
     )
 
     return movie
