@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Optional
 
 import httpx
@@ -284,7 +285,7 @@ class TMDbClient:
         *,
         language: str = "en-US",
         append_to_response: Optional[list[str]] = None,
-    ) -> TMDbMovie:
+    ) -> "MovieMedia":
         """Get detailed information about a specific movie.
         
         Args:
@@ -293,7 +294,7 @@ class TMDbClient:
             append_to_response: Additional data to append (e.g., ['videos', 'credits', 'images'])
             
         Returns:
-            Detailed movie information
+            MovieMedia with metadata from TMDb (file fields use placeholders)
         """
         params: dict[str, Any] = {"language": language}
         if append_to_response:
@@ -336,7 +337,8 @@ class TMDbClient:
             for lang in data.get("spoken_languages", [])
         ]
 
-        return TMDbMovie(
+        # Build TMDbMovie for internal use
+        tmdb_movie = TMDbMovie(
             id=data["id"],
             title=data.get("title", ""),
             original_title=data.get("original_title", ""),
@@ -360,7 +362,16 @@ class TMDbClient:
             production_companies=companies,
             production_countries=countries,
             spoken_languages=languages,
-            raw_data=data,  # Store complete response for additional fields
+            raw_data=data,
+        )
+        
+        # Convert to MovieMedia with placeholder file fields
+        return self.to_movie_media(
+            tmdb_movie=tmdb_movie,
+            file_hash="",  # Placeholder - will be set when file is ingested
+            embedding_hash="",  # Placeholder - will be set when embeddings are generated
+            path="",  # Placeholder - will be set when file is stored
+            file_format=None,
         )
 
     async def search_tv(
@@ -423,7 +434,7 @@ class TMDbClient:
         *,
         language: str = "en-US",
         append_to_response: Optional[list[str]] = None,
-    ) -> TMDbTvShow:
+    ) -> "TvShowMedia":
         """Get detailed information about a specific TV show.
         
         Args:
@@ -432,7 +443,7 @@ class TMDbClient:
             append_to_response: Additional data to append (e.g., ['credits', 'images', 'external_ids'])
             
         Returns:
-            Detailed TV show information
+            TvShowMedia with metadata from TMDb (file fields use placeholders)
         """
         params: dict[str, Any] = {"language": language}
         if append_to_response:
@@ -475,7 +486,8 @@ class TMDbClient:
             for lang in data.get("spoken_languages", [])
         ]
 
-        return TMDbTvShow(
+        # Build TMDbTvShow for internal use
+        tmdb_tv = TMDbTvShow(
             id=data["id"],
             name=data.get("name", ""),
             original_name=data.get("original_name", ""),
@@ -501,7 +513,16 @@ class TMDbClient:
             spoken_languages=languages,
             networks=data.get("networks", []),
             created_by=data.get("created_by", []),
-            raw_data=data,  # Store complete response for additional fields
+            raw_data=data,
+        )
+        
+        # Convert to TvShowMedia with placeholder file fields
+        return self.to_tv_show_media(
+            tmdb_tv=tmdb_tv,
+            file_hash="",  # Placeholder - will be set when file is ingested
+            embedding_hash="",  # Placeholder - will be set when embeddings are generated
+            path="",  # Placeholder - will be set when file is stored
+            file_format=None,
         )
 
     def get_image_url(
@@ -520,6 +541,195 @@ class TMDbClient:
         if not path:
             return None
         return f"{self.IMAGE_BASE_URL}{size}{path}"
+
+    def to_movie_media(
+        self,
+        tmdb_movie: TMDbMovie,
+        file_hash: str,
+        embedding_hash: str,
+        path: str,
+        file_format: Optional[str] = None,
+    ) -> "MovieMedia":
+        """Convert TMDbMovie to MovieMedia domain type.
+        
+        Args:
+            tmdb_movie: TMDb movie data
+            file_hash: File hash for the media
+            embedding_hash: Embedding vector hash
+            path: File path
+            file_format: Optional file format/extension
+            
+        Returns:
+            MovieMedia instance with coerced types
+        """
+        from domain.media import MovieMedia, ImageMedia
+        
+        # Parse release date
+        release_date = None
+        year = None
+        if tmdb_movie.release_date:
+            try:
+                release_date = datetime.fromisoformat(tmdb_movie.release_date)
+                year = release_date.year
+            except (ValueError, AttributeError):
+                logger.warning(f"Invalid release date format: {tmdb_movie.release_date}")
+        
+        # Extract cast names
+        cast_names = None
+        if "credits" in tmdb_movie.raw_data:
+            credits = tmdb_movie.raw_data["credits"]
+            cast_data = credits.get("cast", [])[:20]  # Top 20 cast members
+            if cast_data:
+                cast_names = [member.get("name") for member in cast_data if member.get("name")]
+        
+        # Extract genres
+        genres = None
+        if tmdb_movie.genres:
+            genres = [g.name for g in tmdb_movie.genres]
+        
+        # Extract languages
+        languages = None
+        if tmdb_movie.spoken_languages:
+            languages = [lang.english_name for lang in tmdb_movie.spoken_languages]
+        
+        # Create poster and backdrop metadata
+        poster = None
+        if tmdb_movie.poster_path:
+            poster = ImageMedia(
+                file_path=self.get_image_url(tmdb_movie.poster_path, size="w500") or tmdb_movie.poster_path,
+                width=None,
+                height=None,
+                aspect_ratio=None,
+            )
+        
+        backdrop = None
+        if tmdb_movie.backdrop_path:
+            backdrop = ImageMedia(
+                file_path=self.get_image_url(tmdb_movie.backdrop_path, size="original") or tmdb_movie.backdrop_path,
+                width=None,
+                height=None,
+                aspect_ratio=None,
+            )
+        
+        return MovieMedia(
+            file_hash=file_hash,
+            embedding_hash=embedding_hash,
+            path=path,
+            type="movie",
+            format=file_format,
+            title=tmdb_movie.title,
+            tagline=tmdb_movie.tagline,
+            overview=tmdb_movie.overview,
+            release_date=release_date,
+            year=year,
+            runtime_min=tmdb_movie.runtime,
+            genres=genres,
+            languages=languages,
+            vote_average=tmdb_movie.vote_average,
+            vote_count=tmdb_movie.vote_count,
+            cast=cast_names,
+            rating="adult" if tmdb_movie.adult else None,
+            poster=poster,
+            backdrop=backdrop,
+        )
+    
+    def to_tv_show_media(
+        self,
+        tmdb_tv: TMDbTvShow,
+        file_hash: str,
+        embedding_hash: str,
+        path: str,
+        file_format: Optional[str] = None,
+    ) -> "TvShowMedia":
+        """Convert TMDbTvShow to TvShowMedia domain type.
+        
+        Args:
+            tmdb_tv: TMDb TV show data
+            file_hash: File hash for the media
+            embedding_hash: Embedding vector hash
+            path: File path
+            file_format: Optional file format/extension
+            
+        Returns:
+            TvShowMedia instance with coerced types
+        """
+        from domain.media import TvShowMedia, ImageMedia
+        
+        # Parse air dates
+        first_air_date = None
+        last_air_date = None
+        if tmdb_tv.first_air_date:
+            try:
+                first_air_date = datetime.fromisoformat(tmdb_tv.first_air_date)
+            except (ValueError, AttributeError):
+                logger.warning(f"Invalid first air date format: {tmdb_tv.first_air_date}")
+        
+        if tmdb_tv.last_air_date:
+            try:
+                last_air_date = datetime.fromisoformat(tmdb_tv.last_air_date)
+            except (ValueError, AttributeError):
+                logger.warning(f"Invalid last air date format: {tmdb_tv.last_air_date}")
+        
+        # Extract cast names
+        cast_names = None
+        if "credits" in tmdb_tv.raw_data:
+            credits = tmdb_tv.raw_data["credits"]
+            cast_data = credits.get("cast", [])[:20]  # Top 20 cast members
+            if cast_data:
+                cast_names = [member.get("name") for member in cast_data if member.get("name")]
+        
+        # Extract genres
+        genres = None
+        if tmdb_tv.genres:
+            genres = [g.name for g in tmdb_tv.genres]
+        
+        # Extract languages
+        languages = None
+        if tmdb_tv.spoken_languages:
+            languages = [lang.english_name for lang in tmdb_tv.spoken_languages]
+        
+        # Create poster and backdrop metadata
+        poster = None
+        if tmdb_tv.poster_path:
+            poster = ImageMedia(
+                file_path=self.get_image_url(tmdb_tv.poster_path, size="w500") or tmdb_tv.poster_path,
+                width=None,
+                height=None,
+                aspect_ratio=None,
+            )
+        
+        backdrop = None
+        if tmdb_tv.backdrop_path:
+            backdrop = ImageMedia(
+                file_path=self.get_image_url(tmdb_tv.backdrop_path, size="original") or tmdb_tv.backdrop_path,
+                width=None,
+                height=None,
+                aspect_ratio=None,
+            )
+        
+        return TvShowMedia(
+            file_hash=file_hash,
+            embedding_hash=embedding_hash,
+            path=path,
+            type="tv",
+            format=file_format,
+            name=tmdb_tv.name,
+            overview=tmdb_tv.overview,
+            type=tmdb_tv.type,
+            status=tmdb_tv.status,
+            first_air_date=first_air_date,
+            last_air_date=last_air_date,
+            number_of_seasons=tmdb_tv.number_of_seasons,
+            number_of_episodes=tmdb_tv.number_of_episodes,
+            genres=genres,
+            languages=languages,
+            vote_average=tmdb_tv.vote_average,
+            vote_count=tmdb_tv.vote_count,
+            cast=cast_names,
+            seasons=None,  # Would need additional API calls to populate
+            poster=poster,
+            backdrop=backdrop,
+        )
 
     async def close(self) -> None:
         """Close the HTTP client."""
