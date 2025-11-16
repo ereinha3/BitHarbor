@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import secrets
 from functools import lru_cache
+import os
 from pathlib import Path
 from typing import Literal
 
@@ -9,12 +10,37 @@ from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+_DEFAULT_DATA_ROOT = Path(
+    os.getenv("BITHARBOR_DATA_ROOT")
+    or os.getenv("RAID_PATH")
+    or "/var/lib/bitharbor"
+)
+_DEFAULT_POOL_ROOT = Path(
+    os.getenv("BITHARBOR_POOL_ROOT")
+    or os.getenv("RAID_PATH")
+    or "/mnt/pool"
+)
+_VECTOR_ROOT = Path(
+    os.getenv("BITHARBOR_VECTOR_DB_PATH")
+    or os.getenv("VECTOR_DB_PATH")
+    or "/var/lib/bitharbor/index"
+)
+_DEFAULT_VECTORS_PATH = Path(
+    os.getenv("BITHARBOR_ANN_VECTORS_PATH")
+    or (_VECTOR_ROOT / "movies" / "vectors.fp32")
+)
+_DEFAULT_INDEX_DIRECTORY = Path(
+    os.getenv("BITHARBOR_ANN_INDEX_DIRECTORY")
+    or (_VECTOR_ROOT / "movies" / "diskann")
+)
+
+
 class ServerSettings(BaseModel):
     host: str = "127.0.0.1"
     port: int = 8080
     reload: bool = False
-    data_root: Path = Path("/var/lib/bitharbor")
-    pool_root: Path = Path("/mnt/pool")
+    data_root: Path = _DEFAULT_DATA_ROOT
+    pool_root: Path = _DEFAULT_POOL_ROOT
     log_level: str = "INFO"
 
 
@@ -46,8 +72,8 @@ class AnnSettings(BaseModel):
     search_memory_budget: float = 2.0  # GB
     num_threads: int = 0  # 0 == auto
     rebuild_batch: int = 1
-    vectors_path: Path = Path("/var/lib/bitharbor/index/vectors.fp32")
-    index_directory: Path = Path("/var/lib/bitharbor/index/diskann")
+    vectors_path: Path = _DEFAULT_VECTORS_PATH
+    index_directory: Path = _DEFAULT_INDEX_DIRECTORY
 
 
 class IngestSettings(BaseModel):

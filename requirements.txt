@@ -1,10 +1,12 @@
+aiosqlite==0.21.0
 annotated-doc==0.0.4
 annotated-types==0.7.0
 anyio==4.11.0
 blake3==1.0.8
 certifi==2025.11.12
 charset-normalizer==3.4.4
-diskannpy==0.7.0
+click==8.3.1
+diskannpy==0.4.0
 fastapi==0.121.2
 filelock==3.20.0
 fsspec==2025.10.0
@@ -12,6 +14,7 @@ greenlet==3.2.4
 h11==0.16.0
 hf-xet==1.2.0
 httpcore==1.0.9
+httptools==0.7.1
 httpx==0.28.1
 huggingface-hub==0.36.0
 idna==3.11
@@ -42,6 +45,7 @@ nvidia-nvjitlink-cu12==12.8.93
 nvidia-nvshmem-cu12==3.3.20
 nvidia-nvtx-cu12==12.8.90
 packaging==25.0
+passlib==1.7.4
 pillow==12.0.0
 pluggy==1.6.0
 pydantic==2.12.4
@@ -71,4 +75,8 @@ triton==3.5.1
 typing-extensions==4.15.0
 typing-inspection==0.4.2
 urllib3==2.5.0
+uvicorn==0.38.0
+uvloop==0.22.1
+watchfiles==1.1.1
+websockets==15.0.1
 yt-dlp==2025.11.12
