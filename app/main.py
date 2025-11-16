@@ -38,7 +38,7 @@ def create_app() -> FastAPI:
         logger.info("Database schema ensured.")
         if settings.ann.enabled:
             try:
-                get_ann_service()
+        get_ann_service()
             except Exception as exc:  # noqa: BLE001
                 logger.warning("ANN service initialisation failed: %s", exc, exc_info=True)
 

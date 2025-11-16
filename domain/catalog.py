@@ -108,11 +108,11 @@ class CatalogSearchResult(BaseModel):
     item_size: Optional[int] = Field(None, description="Total size in bytes")
     avg_rating: Optional[float] = Field(None, description="Average user rating (0-5)")
     num_reviews: Optional[int] = Field(None, description="Number of user reviews")
-
+    
     @property
     def score(self) -> float:
         """Calculate a ranking score based on downloads and rating.
-
+        
         Higher downloads and ratings result in higher scores.
         This helps prioritize the best version when there are duplicates.
         """

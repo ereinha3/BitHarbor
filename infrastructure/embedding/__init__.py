@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 try:  # Optional dependency
-    from .imagebind_service import EmbeddingResult, ImageBindService, get_embedding_service
+from .imagebind_service import EmbeddingResult, ImageBindService, get_embedding_service
 except ModuleNotFoundError:  # pragma: no cover
     EmbeddingResult = None
     ImageBindService = None
