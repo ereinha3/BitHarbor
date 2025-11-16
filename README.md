@@ -1,5 +1,6 @@
 ## BitHarbor Backend
 
+```
                                                                       ▒▒                        
                                                                   ░░░░░░                        
                                                                   ▒▒▒▒                          
@@ -47,7 +48,7 @@
 ░░░░░░                    ░░░░  ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░                        
 ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░                                
   ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░                                            
-
+```
 
 BitHarbor is a local-first media server backend built with FastAPI. It keeps your personal media library searchable with multimodal ImageBind embeddings, a DiskANN-backed ANN index, and SQLite persistence.
 
