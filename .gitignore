@@ -10,3 +10,5 @@
 .venv*/
 
 CHANGES.md
+
+.pytest_cache/
