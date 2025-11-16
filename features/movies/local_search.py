@@ -10,9 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.settings import AppSettings, get_settings
 from db.models import IdMap, Movie
-from domain.media.movies import MovieMedia
 from domain.search import LocalMovieSearchHit, LocalMovieSearchResponse
 from features.movies import vector_index
+from features.movies.utils import movie_to_media
 from infrastructure.embedding.sentence_bert_service import (
     SentenceBertService,
     TextEmbeddingResult,
@@ -70,7 +70,7 @@ class MovieLocalSearchService:
         for resolved_movie in resolved:
             if min_score is not None and resolved_movie.score < min_score:
                 continue
-            movie_media = self._to_movie_media(resolved_movie.movie)
+            movie_media = movie_to_media(resolved_movie.movie)
             hits.append(
                 LocalMovieSearchHit(
                     movie_id=resolved_movie.movie.id,
@@ -133,34 +133,6 @@ class MovieLocalSearchService:
             seen.add(item.movie.id)
             unique.append(item)
         return unique
-
-    @staticmethod
-    def _to_movie_media(movie: Movie) -> MovieMedia:
-        return MovieMedia(
-            file_hash=movie.file_hash,
-            embedding_hash=movie.embedding_hash,
-            path=movie.path,
-            format=movie.format,
-            media_type=movie.media_type,
-            catalog_source=movie.catalog_source,
-            catalog_id=movie.catalog_id,
-            catalog_score=movie.catalog_score,
-            catalog_downloads=movie.catalog_downloads,
-            poster=movie.poster,
-            backdrop=movie.backdrop,
-            title=movie.title,
-            tagline=movie.tagline,
-            overview=movie.overview,
-            release_date=movie.release_date,
-            year=movie.year,
-            runtime_min=movie.runtime_min,
-            genres=movie.genres,
-            languages=movie.languages,
-            vote_average=movie.vote_average,
-            vote_count=movie.vote_count,
-            cast=movie.cast,
-            rating=movie.rating,
-        )
 
 
 def get_movie_local_search_service(

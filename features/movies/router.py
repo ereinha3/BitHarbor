@@ -3,10 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from db.models import Movie
 from db.session import get_session
 from domain.catalog import CatalogDownloadRequest, CatalogDownloadResponse, CatalogMatchResponse
+from domain.media.movies import MovieMedia
 from domain.search import LocalMovieSearchResponse
 
 from .download import (
@@ -24,6 +27,7 @@ from .search import (
     get_movie_catalog_search_service,
     get_registered_match,
 )
+from .utils import movie_to_media
 
 router = APIRouter(prefix="/movies", tags=["movies"])
 
@@ -57,6 +61,17 @@ async def search_local_movies(
     search_service: MovieLocalSearchService = Depends(get_movie_local_search_service),
 ) -> LocalMovieSearchResponse:
     return await search_service.search(session=session, query=query, limit=limit, min_score=min_score)
+
+
+async def _fetch_all_movies(session: AsyncSession) -> list[MovieMedia]:
+    result = await session.scalars(select(Movie))
+    movies = result.all()
+    return [movie_to_media(movie) for movie in movies]
+
+
+@router.get("/all", response_model=list[MovieMedia])
+async def list_all_movies(session: AsyncSession = Depends(get_session)) -> list[MovieMedia]:
+    return await _fetch_all_movies(session)
 
 
 @router.post("/catalog/download", response_model=CatalogDownloadResponse)
