@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from infrastructure.ann import get_ann_service
-from api.v1.router import api_router
+from router.v1.router import api_router
 from db.init import init_db
 from app.settings import get_settings
 from app.logging import configure_logging
