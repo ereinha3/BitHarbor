@@ -137,10 +137,17 @@ def map_metadata_to_movie(identifier: str, payload: Mapping[str, Any]) -> MovieM
     cast = _parse_cast(meta.get("creator") or meta.get("director") or meta.get("producer"))
     rating = meta.get("rating") or meta.get("licenseurl")
 
+    downloads_raw = meta.get("downloads") or payload.get("downloads")
+    try:
+        download_count = int(downloads_raw) if downloads_raw is not None else None
+    except (TypeError, ValueError):
+        download_count = None
+
     movie = MovieMedia(
         file_hash=None,
         embedding_hash=None,
         path=None,
+        media_type="movie",
         format=meta.get("format"),
         poster=None,
         backdrop=None,
@@ -156,6 +163,10 @@ def map_metadata_to_movie(identifier: str, payload: Mapping[str, Any]) -> MovieM
         vote_count=None,
         cast=cast,
         rating=rating,
+        catalog_source="internet_archive",
+        catalog_id=identifier,
+        catalog_downloads=download_count,
+        catalog_score=float(download_count) if download_count is not None else None,
     )
 
     return movie

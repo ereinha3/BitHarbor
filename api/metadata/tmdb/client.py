@@ -4,7 +4,14 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Optional, TYPE_CHECKING
+from dotenv import load_dotenv
+import os
 
+load_dotenv()
+
+
+TMDB_API_KEY = os.getenv("TMDB_API_KEY")
+TMDB_ACCESS_TOKEN = os.getenv("TMDB_ACCESS_TOKEN")
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -30,15 +37,6 @@ class TMDbSearchResult:
     adult: bool
     original_language: str
     genre_ids: list[int]
-
-
-@dataclass(slots=True, frozen=True)
-class TMDbMovieMatch:
-    """Movie search result paired with normalized metadata."""
-
-    tmdb_id: int
-    movie: "MovieMedia"
-    raw: TMDbSearchResult
 
 
 @dataclass(slots=True, frozen=True)
@@ -176,15 +174,15 @@ class TMDbClient:
     BASE_URL = "https://api.themoviedb.org/3"
     IMAGE_BASE_URL = "https://image.tmdb.org/t/p/"
 
-    def __init__(self, api_key: str, access_token: Optional[str] = None) -> None:
+    def __init__(self) -> None:
         """Initialize TMDb client.
         
         Args:
             api_key: TMDb API key (v3 auth)
             access_token: TMDb API Read Access Token (Bearer token, preferred)
         """
-        self.api_key = api_key
-        self.access_token = access_token
+        self.api_key = TMDB_API_KEY
+        self.access_token = TMDB_ACCESS_TOKEN
         self._client = httpx.AsyncClient(timeout=30.0)
 
     def _get_headers(self) -> dict[str, str]:
@@ -233,60 +231,19 @@ class TMDbClient:
         self,
         query: str,
         *,
-        year: Optional[int] = None,
-        primary_release_year: Optional[int] = None,
-        page: int = 1,
-        include_adult: bool = False,
-        region: Optional[str] = None,
-        language: str = "en-US",
-    ) -> list[TMDbSearchResult]:
-        """Search for movies by title.
-        
-        Args:
-            query: Movie title to search for
-            year: Filter by release year
-            primary_release_year: Filter by primary release year
-            page: Page number (1-based)
-            include_adult: Include adult content in results
-            region: ISO 3166-1 code to filter release dates
-            language: Language for results (ISO 639-1 code with optional country)
-            
-        Returns:
-            List of search results
-        """
-        params: dict[str, Any] = {
-            "query": query,
-            "page": page,
-            "include_adult": include_adult,
-            "language": language,
-        }
-        if year is not None:
-            params["year"] = year
-        if primary_release_year is not None:
-            params["primary_release_year"] = primary_release_year
-        if region:
-            params["region"] = region
-
-        data = await self._request("GET", "search/movie", params)
-        return [self._parse_movie_search_result(item) for item in data.get("results", [])]
-
-    async def search_movies_with_metadata(
-        self,
-        query: str,
-        *,
-        limit: int = 10,
+        limit: int = 20,
         year: Optional[int] = None,
         primary_release_year: Optional[int] = None,
         include_adult: bool = False,
         region: Optional[str] = None,
         language: str = "en-US",
-    ) -> list[TMDbMovieMatch]:
-        """Search TMDb and map results into MovieMedia instances."""
+    ) -> list["MovieMedia"]:
+        """Search for movies by title and return MovieMedia entries."""
 
-        matches: list[TMDbMovieMatch] = []
         page = 1
+        movies: list[MovieMedia] = []
 
-        while len(matches) < limit:
+        while len(movies) < limit:
             params: dict[str, Any] = {
                 "query": query,
                 "page": page,
@@ -297,7 +254,7 @@ class TMDbClient:
                 params["year"] = year
             if primary_release_year is not None:
                 params["primary_release_year"] = primary_release_year
-            if region is not None:
+            if region:
                 params["region"] = region
 
             data = await self._request("GET", "search/movie", params)
@@ -308,8 +265,8 @@ class TMDbClient:
             for item in results:
                 parsed = self._parse_movie_search_result(item)
                 movie = self._movie_media_from_search_result(parsed)
-                matches.append(TMDbMovieMatch(tmdb_id=parsed.id, movie=movie, raw=parsed))
-                if len(matches) >= limit:
+                movies.append(movie)
+                if len(movies) >= limit:
                     break
 
             total_pages = data.get("total_pages") or 1
@@ -317,7 +274,7 @@ class TMDbClient:
                 break
             page += 1
 
-        return matches
+        return movies[:limit]
 
     async def get_movie_details(
         self,
@@ -644,6 +601,10 @@ class TMDbClient:
             rating="adult" if result.adult else None,
             poster=poster,
             backdrop=backdrop,
+            catalog_source="tmdb",
+            catalog_id=str(result.id),
+            catalog_score=result.popularity,
+            catalog_downloads=None,
         )
 
     def to_movie_media(
@@ -736,6 +697,10 @@ class TMDbClient:
             rating="adult" if tmdb_movie.adult else None,
             poster=poster,
             backdrop=backdrop,
+            catalog_source="tmdb",
+            catalog_id=str(tmdb_movie.id),
+            catalog_score=tmdb_movie.popularity,
+            catalog_downloads=None,
         )
     
     def to_tv_show_media(

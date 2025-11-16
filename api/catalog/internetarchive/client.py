@@ -42,16 +42,6 @@ if IA_EMAIL and IA_PASSWORD:
 
 
 @dataclass(slots=True, frozen=True)
-class MovieSearchOptions:
-    """Tunable knobs for Internet Archive search."""
-
-    limit: int = 20
-    include_metadata: bool = True
-    sorts: Sequence[str] | None = None
-    filters: Sequence[str] | None = None
-
-
-@dataclass(slots=True, frozen=True)
 class MovieDownloadOptions:
     """Options that influence download behaviour."""
 
@@ -69,6 +59,7 @@ class InternetArchiveSearchResult:
     year: int | None = None
     downloads: int | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    movie: MovieMedia | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -117,26 +108,26 @@ class InternetArchiveClient:
     def search_movies(
         self,
         title: str,
+        limit: int = 20,
         *,
-        options: MovieSearchOptions | None = None,
-    ) -> list[InternetArchiveSearchResult]:
+        sorts: Sequence[str] | None = None,
+        filters: Sequence[str] | None = None,
+    ) -> list[MovieMedia]:
         """Search the Internet Archive movie catalog for ``title``."""
 
-        opts = options or MovieSearchOptions()
-
-        params: dict[str, Any] = {"rows": opts.limit, "page": 1}
-        sorts = self._normalize_sorts(opts.sorts)
-        if sorts:
-            params["sort[]"] = sorts
+        params: dict[str, Any] = {"rows": max(1, limit), "page": 1}
+        sort_tokens = self._normalize_sorts(sorts or ["downloads desc"])
+        if sort_tokens:
+            params["sort[]"] = sort_tokens
 
         query = f'title:"{title}"' if title else "*:*"
         composed_query = self._compose_query(
             query,
             mediatype="movies",
-            extra_filters=opts.filters,
+            extra_filters=filters,
         )
 
-        results: list[InternetArchiveSearchResult] = []
+        best_by_key: dict[tuple[str, int | None], tuple[MovieMedia, int]] = {}
         search_hits = self._session.search_items(composed_query, params=params)
         for hit in search_hits:
             if not isinstance(hit, Mapping):
@@ -146,27 +137,36 @@ class InternetArchiveClient:
                 continue
 
             metadata = dict(hit)
-            item_metadata: Mapping[str, Any] | None = None
-            if opts.include_metadata:
-                item_metadata = self._safe_fetch_metadata(identifier)
-                if item_metadata:
-                    metadata["item_metadata"] = item_metadata
+            item_metadata = self._safe_fetch_metadata(identifier)
+            payload = item_metadata if item_metadata else {"metadata": metadata}
+            try:
+                movie = map_metadata_to_movie(identifier, payload)
+            except Exception:  # noqa: BLE001
+                logger.debug("Failed to map IA metadata for %s", identifier, exc_info=True)
+                continue
 
-            title_value = metadata.get("title")
-            if not title_value and item_metadata:
-                title_value = item_metadata.get("metadata", {}).get("title")
+            downloads = self._safe_int(metadata.get("downloads"))
+            if downloads is not None:
+                movie.catalog_downloads = downloads
+                movie.catalog_score = float(downloads)
+            if not movie.catalog_id:
+                movie.catalog_id = identifier
+            movie.catalog_source = movie.catalog_source or "internet_archive"
 
-            results.append(
-                InternetArchiveSearchResult(
-                    identifier=identifier,
-                    title=title_value,
-                    year=self._extract_year(metadata, item_metadata),
-                    downloads=self._safe_int(metadata.get("downloads")),
-                    metadata=metadata,
-                )
-            )
+            key_title = (movie.title or identifier).strip().lower() if movie.title else identifier.lower()
+            key = (key_title, movie.year)
+            score = downloads or 0
+            existing = best_by_key.get(key)
+            if existing is None or score > existing[1]:
+                best_by_key[key] = (movie, score)
 
-        return results
+            if len(best_by_key) >= limit:
+                # still continue collecting to ensure better score? we already update if better, but once we hit limit we can continue
+                continue
+
+        movies = [entry[0] for entry in best_by_key.values()]
+        movies.sort(key=lambda m: m.catalog_downloads or 0, reverse=True)
+        return movies[:limit]
 
     def download_movie(
         self,

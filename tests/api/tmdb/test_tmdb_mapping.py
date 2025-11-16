@@ -4,10 +4,10 @@ import asyncio
 
 import pytest
 
-from api.metadata.tmdb.client import TMDbClient, TMDbMovieMatch
+from api.metadata.tmdb.client import TMDbClient
 
 
-def test_search_movies_with_metadata_maps_to_movie_media(monkeypatch) -> None:
+def test_search_movie_returns_movie_media(monkeypatch) -> None:
     client = TMDbClient(api_key="dummy")
 
     sample_response = {
@@ -38,16 +38,16 @@ def test_search_movies_with_metadata_maps_to_movie_media(monkeypatch) -> None:
 
     monkeypatch.setattr(client, "_request", fake_request)
 
-    matches = asyncio.run(client.search_movies_with_metadata("matrix", limit=5))
+    movies = asyncio.run(client.search_movie("matrix", limit=5))
 
-    assert matches, "Expected at least one match"
-    match = matches[0]
-    assert isinstance(match, TMDbMovieMatch)
-    assert match.tmdb_id == 603
-    movie = match.movie
+    assert movies, "Expected at least one result"
+    movie = movies[0]
     assert movie.media_type == "movie"
     assert movie.title == "The Matrix"
     assert movie.year == 1999
+    assert movie.catalog_source == "tmdb"
+    assert movie.catalog_id == "603"
+    assert movie.catalog_score == pytest.approx(100.1)
     assert movie.vote_average == pytest.approx(8.7)
     assert movie.poster and movie.poster.file_path.endswith("/poster.jpg")
 

@@ -34,7 +34,7 @@ async def search_example():
 
     # Search for classic sci-fi films
     results = client.search_movies(
-        title="Metropolis",
+            title="Metropolis",
         options=MovieSearchOptions(
             limit=5,
             sorts=["downloads desc"],

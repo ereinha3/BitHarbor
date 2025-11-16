@@ -128,77 +128,43 @@ async def search_internet_archive(
     """
     try:
         ia_client = InternetArchiveClient()
-        
-        # Apply default sorting if not provided
-        sorts = payload.sorts or ["downloads desc", "avg_rating desc"]
-        
-        options = MovieSearchOptions(
+
+        movies = ia_client.search_movies(
+            payload.query,
             limit=payload.rows,
-            include_metadata=True,
-            sorts=sorts,
+            sorts=payload.sorts,
             filters=payload.filters,
         )
-        search_results = ia_client.search_movies(
-            title=payload.query,
-            options=options,
-        )
 
-        # Map to response schema and deduplicate
-        seen_titles: dict[tuple[str, str], CatalogSearchResult] = {}  # (title, year) -> best result
-        
-        for result in search_results:
-            metadata = result.metadata
-            item_metadata = metadata.get("item_metadata", {}).get("metadata", {})
+        results: list[CatalogSearchResult] = []
+        seen: dict[tuple[str, int | None], CatalogSearchResult] = {}
 
-            # Extract year from various possible fields
-            year = None
-            year_str = item_metadata.get("year") or item_metadata.get("date", "")
-            if year_str:
-                try:
-                    year = str(year_str).split("-")[0]  # Handle "1973" or "1973-01-01"
-                except (ValueError, AttributeError):
-                    pass
+        for movie in movies:
+            identifier = movie.catalog_id or ""
+            title = movie.title or identifier
+            year = movie.year
+            description = movie.overview[:500] if movie.overview else None
+            downloads = movie.catalog_downloads
 
-            # Extract description
-            description = item_metadata.get("description")
-            if isinstance(description, list):
-                description = " ".join(str(d) for d in description)
-            if description:
-                description = str(description)[:500]  # Truncate for preview
-
-            # Extract rating information
-            avg_rating = metadata.get("avg_rating")
-            num_reviews = metadata.get("num_reviews")
-            
             catalog_result = CatalogSearchResult(
-                identifier=result.identifier,
-                title=result.title,
-                year=year,
+                identifier=identifier,
+                title=title,
+                year=str(year) if year is not None else None,
                 description=description,
-                downloads=metadata.get("downloads"),
-                item_size=metadata.get("item_size"),
-                avg_rating=avg_rating,
-                num_reviews=num_reviews,
+                downloads=downloads,
+                item_size=None,
+                avg_rating=None,
+                num_reviews=None,
             )
-            
-            # Deduplicate: Keep the best version of each movie
-            title_key = (result.title or "unknown", year or "unknown")
-            
-            if title_key not in seen_titles:
-                seen_titles[title_key] = catalog_result
-            else:
-                # Compare scores and keep the better one
-                existing = seen_titles[title_key]
-                if catalog_result.score > existing.score:
-                    seen_titles[title_key] = catalog_result
-        
-        # Convert back to list and sort by score
-        results = sorted(seen_titles.values(), key=lambda r: r.score, reverse=True)
 
-        return CatalogSearchResponse(
-            results=results,
-            total=len(results),
-        )
+            key = (title.lower(), year)
+            existing = seen.get(key)
+            if existing is None or catalog_result.score > existing.score:
+                seen[key] = catalog_result
+
+        results = sorted(seen.values(), key=lambda r: r.score, reverse=True)
+
+        return CatalogSearchResponse(results=results, total=len(results))
 
     except Exception as e:
         raise HTTPException(

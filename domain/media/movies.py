@@ -8,7 +8,7 @@ from .base import BaseMedia
 
 class MovieMedia(BaseMedia):
     """Complete movie metadata from enrichment."""
-
+    
     # Basic Info
     title: str = Field(..., description="Movie title")
     tagline: Optional[str] = Field(None, description="Movie tagline")
@@ -24,7 +24,7 @@ class MovieMedia(BaseMedia):
     # Categories
     genres: Optional[list[str]] = Field(None, description="List of genre names")
     languages: Optional[list[str]] = Field(None, description="List of spoken languages")
-
+    
     # Ratings
     vote_average: Optional[float] = Field(None, description="Average rating (0-10)")
     vote_count: Optional[int] = Field(None, description="Number of votes")

@@ -11,10 +11,8 @@ import internetarchive as ia
 from api.catalog.internetarchive import (
     InternetArchiveClient,
     InternetArchiveDownloadError,
-    InternetArchiveSearchResult,
     MovieAssetBundle,
     MovieAssetPlan,
-    MovieSearchOptions,
 )
 
 
@@ -81,28 +79,22 @@ def test_search_movies_returns_results(patch_get_session: DummySession) -> None:
     }
 
     client = InternetArchiveClient()
-    options = MovieSearchOptions(
+    results = client.search_movies(
+        "dogs",
         limit=5,
-        include_metadata=True,
         sorts=["downloads desc"],
         filters=["language:eng"],
     )
 
-    results = client.search_movies("dogs", options=options)
-
     assert len(results) == 2
-    assert results[0] == InternetArchiveSearchResult(
-        identifier="item_one",
-        title="First Item",
-        year=None,
-        downloads=42,
-        metadata={
-            **hits[0],
-            "item_metadata": patch_get_session.items["item_one"],
-        },
-    )
-    assert results[1].identifier == "item_two"
-    assert results[1].title == "Second Title"
+    first = results[0]
+    second = results[1]
+    assert first.catalog_id == "item_one"
+    assert first.title == "First Item"
+    assert first.catalog_source == "internet_archive"
+    assert first.catalog_downloads == 42
+    assert second.catalog_id == "item_two"
+    assert second.title == "Second Title"
     expected_query = "(title:\"dogs\") AND mediatype:(movies) AND language:eng"
     assert patch_get_session.last_query == expected_query
     assert patch_get_session.last_params == {
@@ -119,12 +111,9 @@ def test_search_movies_builds_expected_query(patch_get_session: DummySession) ->
     }
 
     client = InternetArchiveClient()
-    results = client.search_movies(
-        "Fantastic Planet",
-        options=MovieSearchOptions(limit=1, sorts=["downloads desc"], include_metadata=True),
-    )
+    results = client.search_movies("Fantastic Planet", limit=1, sorts=["downloads desc"])
 
-    assert results[0].identifier == "fantasticplanet1973"
+    assert results[0].catalog_id == "fantasticplanet1973"
     assert patch_get_session.last_query == "(title:\"Fantastic Planet\") AND mediatype:(movies)"
     assert patch_get_session.last_params["rows"] == 1
 

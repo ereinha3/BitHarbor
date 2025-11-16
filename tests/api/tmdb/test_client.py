@@ -15,6 +15,7 @@ from api.tmdb import TMDbClient
 
 # Get env variables from .env
 import dotenv
+
 dotenv.load_dotenv()
 
 
@@ -30,17 +31,16 @@ async def test_search_movie():
 
     async with TMDbClient(api_key=api_key, access_token=access_token) as client:
         print("\n🔍 Searching for 'The Matrix'...")
-        results = await client.search_movie("The Matrix", year=1999)
+        movies = await client.search_movie("The Matrix", year=1999, limit=5)
 
-        print(f"Found {len(results)} results:\n")
-        for i, movie in enumerate(results[:5], 1):
-            print(f"{i}. {movie.title} ({movie.release_date})")
-            print(f"   ID: {movie.id}")
+        print(f"Found {len(movies)} results:\n")
+        for i, movie in enumerate(movies, 1):
+            print(f"{i}. {movie.title} ({movie.year})")
+            print(f"   TMDb ID: {movie.catalog_id}")
             print(f"   Rating: {movie.vote_average}/10 ({movie.vote_count} votes)")
-            print(f"   Overview: {movie.overview[:100]}...")
-            if movie.poster_path:
-                poster_url = client.get_image_url(movie.poster_path, size="w500")
-                print(f"   Poster: {poster_url}")
+            print(f"   Overview: {movie.overview[:100]}..." if movie.overview else "   Overview: n/a")
+            if movie.poster and movie.poster.file_path:
+                print(f"   Poster: {movie.poster.file_path}")
             print()
 
 
@@ -54,8 +54,7 @@ async def test_movie_details():
         return
 
     async with TMDbClient(api_key=api_key, access_token=access_token) as client:
-        # The Matrix (1999) - ID: 603
-        movie_id = 603
+        movie_id = 603  # The Matrix (1999)
         print(f"\n📽️  Fetching details for movie ID {movie_id}...")
 
         movie = await client.get_movie_details(
@@ -63,44 +62,26 @@ async def test_movie_details():
         )
 
         print(f"\nTitle: {movie.title}")
-        print(f"Original Title: {movie.original_title}")
+        print(f"Original Title: {movie.title}")
         print(f"Tagline: {movie.tagline}")
-        print(f"Release Date: {movie.release_date}")
-        print(f"Runtime: {movie.runtime} minutes")
-        print(f"Status: {movie.status}")
-        print(f"Budget: ${movie.budget:,}")
-        print(f"Revenue: ${movie.revenue:,}")
+        print(f"Release Year: {movie.year}")
+        print(f"Runtime: {movie.runtime_min} minutes")
         print(f"Rating: {movie.vote_average}/10 ({movie.vote_count} votes)")
-        print(f"Popularity: {movie.popularity}")
-        print(f"IMDb ID: {movie.imdb_id}")
-        print(f"Homepage: {movie.homepage}")
-        print(f"\nOverview:\n{movie.overview}")
+        print(f"Popularity: {movie.catalog_score}")
+        print(f"TMDb ID: {movie.catalog_id}")
+        print(f"Overview: {movie.overview}")
 
-        print(f"\nGenres: {', '.join(g.name for g in movie.genres)}")
-        print(
-            f"Languages: {', '.join(lang.english_name for lang in movie.spoken_languages)}"
-        )
-        print(
-            f"Production Countries: {', '.join(c.name for c in movie.production_countries)}"
-        )
-        print(
-            f"Production Companies: {', '.join(c.name for c in movie.production_companies[:3])}"
-        )
+        if movie.poster and movie.poster.file_path:
+            print(f"\nPoster URL: {movie.poster.file_path}")
+        if movie.backdrop and movie.backdrop.file_path:
+            print(f"Backdrop URL: {movie.backdrop.file_path}")
 
-        if movie.poster_path:
-            print(f"\nPoster URL: {client.get_image_url(movie.poster_path)}")
-        if movie.backdrop_path:
-            print(f"Backdrop URL: {client.get_image_url(movie.backdrop_path)}")
-
-        # Show appended data if present
         if "videos" in movie.raw_data:
             video_count = len(movie.raw_data["videos"].get("results", []))
-            print(f"\nVideos: {video_count} trailers/clips available")
-
+            print(f"Videos: {video_count} trailers/clips available")
         if "credits" in movie.raw_data:
             cast_count = len(movie.raw_data["credits"].get("cast", []))
-            crew_count = len(movie.raw_data["credits"].get("crew", []))
-            print(f"Credits: {cast_count} cast members, {crew_count} crew members")
+            print(f"Credits: {cast_count} cast members")
 
 
 async def test_search_with_filters():
@@ -114,34 +95,19 @@ async def test_search_with_filters():
 
     async with TMDbClient(api_key=api_key, access_token=access_token) as client:
         print("\n🔍 Searching for 'Inception' (2010) with filters...")
-        results = await client.search_movie(
-            "Inception", year=2010, language="en-US", page=1
+        movies = await client.search_movie(
+            "Inception", year=2010, language="en-US", limit=5
         )
 
-        if results:
-            movie = results[0]
-            print(f"\nTop Result:")
-            print(f"Title: {movie.title}")
-            print(f"Release Date: {movie.release_date}")
-            print(f"Rating: {movie.vote_average}/10")
-            print(f"Popularity: {movie.popularity}")
-            print(f"Language: {movie.original_language}")
+        for movie in movies:
+            print(f"- {movie.title} ({movie.year}) :: TMDb ID {movie.catalog_id}")
 
 
-async def main():
-    """Run all tests."""
-    print("=" * 80)
-    print("TMDb API Client Test Suite")
-    print("=" * 80)
-
-    await test_search_movie()
-    await test_movie_details()
-    await test_search_with_filters()
-
-    print("\n" + "=" * 80)
-    print("✅ All tests completed!")
-    print("=" * 80)
+def main() -> None:
+    asyncio.run(test_search_movie())
+    asyncio.run(test_movie_details())
+    asyncio.run(test_search_with_filters())
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
