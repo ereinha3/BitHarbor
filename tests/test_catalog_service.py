@@ -18,7 +18,7 @@ sys.modules['imagebind.models.imagebind_model'] = MagicMock()
 
 import pytest
 
-from api.internetarchive import MovieAssetBundle
+from api.catalog.internetarchive import MovieAssetBundle
 from domain.schemas import IngestResponse
 from features.catalog.service import CatalogService
 
@@ -67,7 +67,7 @@ def mock_ia_bundle():
         video_path=Path("/tmp/fantastic-planet__1973/film.mp4"),
         cover_art_path=Path("/tmp/fantastic-planet__1973/poster.jpg"),
         metadata_xml_path=Path("/tmp/fantastic-planet__1973/_meta.xml"),
-        subtitle_paths=[Path("/tmp/fantastic-planet__1973/subs.srt")],
+        subtitle_paths=(Path("/tmp/fantastic-planet__1973/subs.srt"),),
     )
 
 
@@ -171,7 +171,7 @@ async def test_ingest_handles_missing_video(catalog_service):
         video_path=None,
         cover_art_path=None,
         metadata_xml_path=None,
-        subtitle_paths=[],
+        subtitle_paths=(),
     )
 
     with patch.object(catalog_service.ia_client, "collect_movie_assets") as mock_collect:
@@ -196,7 +196,7 @@ def test_extract_ia_metadata_with_minimal_data(catalog_service):
         video_path=Path("/tmp/video.mp4"),
         cover_art_path=None,
         metadata_xml_path=None,
-        subtitle_paths=[],
+        subtitle_paths=(),
     )
 
     metadata = catalog_service._extract_ia_metadata(bundle)

@@ -1,13 +1,22 @@
-"""Utilities for searching and downloading movies from the Internet Archive."""
+"""Internet Archive helper tailored for BitHarbor's movie catalog.
+
+The goal of this module is to expose two sharp, predictable primitives:
+
+* ``search_movies`` – build a catalog-style result list for a query
+* ``download_movie`` – fetch the primary assets for a single identifier
+
+The implementation intentionally avoids leaking the internetarchive library's
+parameters into the rest of the codebase so that future catalog integrations
+can share a similar interface.
+"""
 
 from __future__ import annotations
 
-import json
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, Mapping, Optional, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 from dotenv import load_dotenv
 import internetarchive as ia
@@ -30,21 +39,46 @@ if IA_EMAIL and IA_PASSWORD:
 
 
 @dataclass(slots=True, frozen=True)
+class MovieSearchOptions:
+    """Tunable knobs for Internet Archive search."""
+
+    limit: int = 20
+    include_metadata: bool = True
+    sorts: Sequence[str] | None = None
+    filters: Sequence[str] | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class MovieDownloadOptions:
+    """Options that influence download behaviour."""
+
+    include_subtitles: bool = True
+    checksum: bool = False
+    ignore_existing: bool = True
+
+
+@dataclass(slots=True, frozen=True)
 class InternetArchiveSearchResult:
+    """Lightweight representation of a catalog hit."""
+
     identifier: str
-    title: Optional[str]
-    metadata: Mapping[str, Any]
+    title: str | None = None
+    year: int | None = None
+    downloads: int | None = None
+    metadata: Mapping[str, Any] = field(default_factory=dict)
 
 
-@dataclass
+@dataclass(slots=True, frozen=True)
 class MovieAssetBundle:
+    """Local artefacts produced by ``download_movie``."""
+
     identifier: str
-    title: Optional[str]
+    title: str | None
     metadata: Mapping[str, Any]
-    video_path: Optional[Path]
-    cover_art_path: Optional[Path]
-    metadata_xml_path: Optional[Path]
-    subtitle_paths: list[Path]
+    video_path: Path | None
+    cover_art_path: Path | None
+    metadata_xml_path: Path | None
+    subtitle_paths: tuple[Path, ...]
 
 
 class InternetArchiveDownloadError(RuntimeError):
@@ -54,9 +88,11 @@ class InternetArchiveDownloadError(RuntimeError):
 class InternetArchiveClient:
     """Thin wrapper around the internetarchive library for movie searches/downloads."""
 
-    def __init__(self) -> None:
-        if CONFIG_FILE.exists():
-            self._session: ArchiveSession = ia.get_session(config_file=str(CONFIG_FILE))
+    def __init__(self, session: ArchiveSession | None = None) -> None:
+        if session is not None:
+            self._session = session
+        elif CONFIG_FILE.exists():
+            self._session = ia.get_session(config_file=str(CONFIG_FILE))
         else:
             self._session = ia.get_session()
 
@@ -64,21 +100,116 @@ class InternetArchiveClient:
         self,
         title: str,
         *,
-        rows: int = 20,
-        enrich: bool = True,
-        sorts: Sequence[str] | None = None,
-        filters: Sequence[str] | None = None,
-    ) -> Iterator[InternetArchiveSearchResult]:
-        """Search Internet Archive movie catalog for the given title."""
+        options: MovieSearchOptions | None = None,
+    ) -> list[InternetArchiveSearchResult]:
+        """Search the Internet Archive movie catalog for ``title``."""
 
-        query = f'title:"{title}"'
-        return self._search(
+        opts = options or MovieSearchOptions()
+
+        params: dict[str, Any] = {"rows": opts.limit, "page": 1}
+        sorts = self._normalize_sorts(opts.sorts)
+        if sorts:
+            params["sort[]"] = sorts
+
+        query = f'title:"{title}"' if title else "*:*"
+        composed_query = self._compose_query(
             query,
-            rows=rows,
-            enrich=enrich,
-            sorts=sorts,
-            filters=filters,
             mediatype="movies",
+            extra_filters=opts.filters,
+        )
+
+        results: list[InternetArchiveSearchResult] = []
+        search_hits = self._session.search_items(composed_query, params=params)
+        for hit in search_hits:
+            if not isinstance(hit, Mapping):
+                continue
+            identifier = hit.get("identifier")
+            if not identifier:
+                continue
+
+            metadata = dict(hit)
+            item_metadata: Mapping[str, Any] | None = None
+            if opts.include_metadata:
+                item_metadata = self._safe_fetch_metadata(identifier)
+                if item_metadata:
+                    metadata["item_metadata"] = item_metadata
+
+            title_value = metadata.get("title")
+            if not title_value and item_metadata:
+                title_value = item_metadata.get("metadata", {}).get("title")
+
+            results.append(
+                InternetArchiveSearchResult(
+                    identifier=identifier,
+                    title=title_value,
+                    year=self._extract_year(metadata, item_metadata),
+                    downloads=self._safe_int(metadata.get("downloads")),
+                    metadata=metadata,
+                )
+            )
+
+        return results
+
+    def download_movie(
+        self,
+        identifier: str,
+        *,
+        destination: Path,
+        options: MovieDownloadOptions | None = None,
+    ) -> MovieAssetBundle:
+        """Download the primary assets for a movie."""
+
+        opts = options or MovieDownloadOptions()
+        metadata = self.fetch_metadata(identifier)
+        files = metadata.get("files", []) or []
+        title = metadata.get("metadata", {}).get("title")
+
+        video_file = self._select_video_file(files)
+        metadata_xml_file = self._select_metadata_xml(files)
+        cover_art_file = self._select_cover_art(files)
+        subtitle_files = self._select_subtitles(files) if opts.include_subtitles else []
+
+        download_map: dict[str, str] = {
+            remote: remote
+            for remote in [video_file, metadata_xml_file, cover_art_file]
+            if remote
+        }
+        for remote in subtitle_files:
+            download_map[remote] = remote
+
+        destination.mkdir(parents=True, exist_ok=True)
+        target_dir = destination / identifier
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        if download_map:
+            item = self.get_item(identifier)
+            try:
+                item.download(
+                    destdir=str(destination),
+                    files=download_map,
+                    ignore_existing=opts.ignore_existing,
+                    checksum=opts.checksum,
+                )
+            except Exception as exc:  # noqa: BLE001
+                raise InternetArchiveDownloadError(
+                    f"Failed to download Internet Archive item '{identifier}'."
+                ) from exc
+
+        def local_path(name: str | None) -> Path | None:
+            return target_dir / name if name else None
+
+        subtitle_paths = tuple(
+            path for path in (local_path(name) for name in subtitle_files) if path is not None
+        )
+
+        return MovieAssetBundle(
+            identifier=identifier,
+            title=title,
+            metadata=metadata,
+            video_path=local_path(video_file),
+            cover_art_path=local_path(cover_art_file),
+            metadata_xml_path=local_path(metadata_xml_file),
+            subtitle_paths=subtitle_paths,
         )
 
     def collect_movie_assets(
@@ -89,134 +220,20 @@ class InternetArchiveClient:
         include_subtitles: bool = True,
         checksum: bool = False,
     ) -> MovieAssetBundle:
-        """
-        Download the primary assets for a movie (video, cover art, metadata xml, optional subtitles).
+        """Backward-compatible alias for :meth:`download_movie`."""
 
-        Returns a ``MovieAssetBundle`` describing local paths to each asset.
-        """
-
-        metadata = self.fetch_metadata(identifier)
-        files = metadata.get("files", [])
-        title = metadata.get("metadata", {}).get("title")
-
-        video_file = self._select_video_file(files)
-        metadata_xml_file = self._select_metadata_xml(files)
-        cover_art_file = self._select_cover_art(files)
-        subtitle_files = self._select_subtitles(files) if include_subtitles else []
-
-        download_map: Dict[str, str] = {}
-        for remote in [video_file, metadata_xml_file, cover_art_file]:
-            if remote:
-                download_map[remote] = remote
-        for remote in subtitle_files:
-            download_map[remote] = remote
-
-        target_dir = destination / identifier
-        target_dir.mkdir(parents=True, exist_ok=True)
-
-        if download_map:
-            item = self.get_item(identifier)
-            item.download(
-                destdir=str(destination),
-                files=download_map,
-                ignore_existing=True,
-                checksum=checksum,
-            )
-
-        def local_path(name: Optional[str]) -> Optional[Path]:
-            return target_dir / name if name else None
-
-        return MovieAssetBundle(
-            identifier=identifier,
-            title=title,
-            metadata=metadata,
-            video_path=local_path(video_file),
-            cover_art_path=local_path(cover_art_file),
-            metadata_xml_path=local_path(metadata_xml_file),
-            subtitle_paths=[local_path(name) for name in subtitle_files if local_path(name)],
+        options = MovieDownloadOptions(
+            include_subtitles=include_subtitles,
+            checksum=checksum,
         )
-
-    def download(
-        self,
-        identifier: str,
-        *,
-        destination: Path,
-        glob_pattern: str | None = None,
-        retries: int | None = 3,
-        ignore_existing: bool = True,
-        checksum: bool = False,
-    ) -> Path:
-        """Download an item from archive.org into the provided destination directory."""
-
-        destination.mkdir(parents=True, exist_ok=True)
-
-        def _download() -> bool:
-            try:
-                ia.download(
-                    identifier,
-                    destdir=str(destination),
-                    glob_pattern=glob_pattern,
-                    ignore_existing=ignore_existing,
-                    checksum=checksum,
-                    retries=retries,
-                )
-                return True
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Internet Archive download failed for %s: %s", identifier, exc)
-                return False
-
-        if _download():
-            return destination
-
-        raise InternetArchiveDownloadError(
-            f"Failed to download Internet Archive item '{identifier}'."
-        )
-
-    def _search(
-        self,
-        query: str,
-        *,
-        rows: int,
-        enrich: bool,
-        sorts: Sequence[str] | None,
-        filters: Sequence[str] | None,
-        mediatype: str | None,
-    ) -> Iterator[InternetArchiveSearchResult]:
-        params: Dict[str, Any] = {"rows": rows, "page": 1}
-
-        if sorts:
-            normalized: list[str] = []
-            for sort in sorts:
-                token = sort.strip()
-                if not token:
-                    continue
-                if " " not in token:
-                    token = f"{token} desc"
-                normalized.append(token)
-            if normalized:
-                params["sort[]"] = normalized
-
-        composed_query = self._compose_query(query, mediatype=mediatype, extra_filters=filters)
-
-        search_results = self._session.search_items(composed_query, params=params)
-        for hit in search_results:
-            if isinstance(hit, Mapping) and "error" in hit:
-                raise RuntimeError(f"Internet Archive API error: {hit['error']}")
-            metadata = dict(hit)
-            identifier = metadata.get("identifier")
-            if not identifier:
-                continue
-            title = metadata.get("title")
-            if enrich:
-                item_data = self._safe_fetch_metadata(identifier)
-                if item_data:
-                    metadata["item_metadata"] = item_data
-                    title = title or item_data.get("metadata", {}).get("title")
-            yield InternetArchiveSearchResult(identifier=identifier, title=title, metadata=metadata)
+        return self.download_movie(identifier, destination=destination, options=options)
 
     def fetch_metadata(self, identifier: str) -> Mapping[str, Any]:
         item = self.get_item(identifier)
-        return getattr(item, "item_metadata", {}) or {}
+        payload = getattr(item, "item_metadata", {}) or {}
+        if not isinstance(payload, Mapping):
+            return {}
+        return payload
 
     def get_item(self, identifier: str) -> Item:
         return self._session.get_item(identifier)
@@ -228,6 +245,19 @@ class InternetArchiveClient:
             logger.debug("Failed to enrich metadata for %s: %s", identifier, exc, exc_info=True)
             return {}
 
+    def _normalize_sorts(self, sorts: Sequence[str] | None) -> list[str]:
+        if not sorts:
+            return []
+        normalized: list[str] = []
+        for sort in sorts:
+            token = (sort or "").strip()
+            if not token:
+                continue
+            if " " not in token:
+                token = f"{token} desc"
+            normalized.append(token)
+        return normalized
+
     def _compose_query(
         self,
         base_query: str,
@@ -236,16 +266,53 @@ class InternetArchiveClient:
         extra_filters: Sequence[str] | None,
     ) -> str:
         segments: list[str] = []
-        base_query = base_query.strip()
-        if base_query:
-            segments.append(f"({base_query})")
+        query = base_query.strip()
+        if query:
+            segments.append(f"({query})")
         if mediatype:
             segments.append(f"mediatype:({mediatype})")
         if extra_filters:
-            segments.extend(extra_filters)
-        return " AND ".join(segments) if segments else base_query or "*:*"
+            segments.extend(filter(None, (flt.strip() for flt in extra_filters)))
+        return " AND ".join(segments) if segments else "*:*"
 
-    def _select_video_file(self, files: Iterable[Mapping[str, Any]]) -> Optional[str]:
+    def _extract_year(
+        self,
+        hit_metadata: Mapping[str, Any],
+        item_metadata: Mapping[str, Any] | None,
+    ) -> int | None:
+        sources = (
+            hit_metadata.get("year"),
+            hit_metadata.get("date"),
+        )
+        if item_metadata:
+            meta = item_metadata.get("metadata", {})
+            sources += (
+                meta.get("year"),
+                meta.get("date"),
+            )
+        for source in sources:
+            year = self._safe_year(source)
+            if year is not None:
+                return year
+        return None
+
+    def _safe_int(self, value: Any) -> int | None:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _safe_year(self, value: Any) -> int | None:
+        if value is None:
+            return None
+        try:
+            text = str(value)
+            year = int(text.split("-")[0])
+        except (ValueError, AttributeError):
+            return None
+        return year if 1800 <= year <= 2100 else None
+
+    def _select_video_file(self, files: Iterable[Mapping[str, Any]]) -> str | None:
         for file_info in files:
             name = file_info.get("name", "")
             source = file_info.get("source")
@@ -257,7 +324,7 @@ class InternetArchiveClient:
                 return name
         return None
 
-    def _select_metadata_xml(self, files: Iterable[Mapping[str, Any]]) -> Optional[str]:
+    def _select_metadata_xml(self, files: Iterable[Mapping[str, Any]]) -> str | None:
         for file_info in files:
             name = file_info.get("name", "")
             if name.endswith("_meta.xml"):
@@ -268,7 +335,7 @@ class InternetArchiveClient:
                 return name
         return None
 
-    def _select_cover_art(self, files: Iterable[Mapping[str, Any]]) -> Optional[str]:
+    def _select_cover_art(self, files: Iterable[Mapping[str, Any]]) -> str | None:
         for file_info in files:
             if file_info.get("format") == "Item Tile":
                 return file_info.get("name")
@@ -288,78 +355,3 @@ class InternetArchiveClient:
             if name.lower().endswith(SUBTITLE_EXTENSIONS):
                 subtitles.append(name)
         return subtitles
-
-
-def print_nested_dictionary(dictionary, indent=0):
-    for key, value in dictionary.items():
-        if isinstance(value, dict):
-            print("\t" * indent + str(key))
-            print_nested_dictionary(value, indent + 1)
-        elif isinstance(value, list):
-            print("\t" * indent + str(key))
-            print_list(value, indent + 1)
-        else:
-            print("\t" * indent + str(key))
-            print("\t" * indent + "\t" + str(value))
-
-
-def print_list(items, indent=0):
-    for item in items:
-        if isinstance(item, dict):
-            print_nested_dictionary(item, indent)
-        else:
-            print("\t" * indent + str(item))
-
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Query Internet Archive movie metadata.")
-    parser.add_argument("query", nargs="+", help="Movie title to search for")
-    parser.add_argument("--rows", type=int, default=5, help="Number of results to return")
-    parser.add_argument("--sort", dest="sorts", action="append", default=None, help="Sort key (e.g. downloads desc)")
-    parser.add_argument(
-        "--filter",
-        dest="filters",
-        action="append",
-        default=None,
-        help="Additional Lucene filter clauses (e.g. language:eng)",
-    )
-    parser.add_argument(
-        "--no-enrich",
-        action="store_true",
-        help="Skip fetching item metadata for each result",
-    )
-    parser.add_argument(
-        "--download",
-        action="store_true",
-        help="Download each matched item into ~/Downloads",
-    )
-    args = parser.parse_args()
-
-    client = InternetArchiveClient()
-    query_str = " ".join(args.query)
-
-    for result in client.search_movies(
-        query_str,
-        rows=args.rows,
-        enrich=not args.no_enrich,
-        sorts=args.sorts,
-        filters=args.filters,
-    ):
-        print(f"{result.identifier} :: {result.title or 'No title'}")
-        print_nested_dictionary(result.metadata)
-        print()
-
-        if args.download:
-            destination = Path.home() / "downloads"
-            try:
-                client.download(result.identifier, destination=destination)
-            except Exception as exc:  # noqa: BLE001
-                print(f"Error downloading {result.identifier}: {exc}")
-                continue
-            else:
-                print(f"Downloaded to {destination / result.identifier}")
-                print()
-
-

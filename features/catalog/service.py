@@ -10,7 +10,7 @@ from typing import Any, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.internetarchive import InternetArchiveClient, MovieAssetBundle
+from api.catalog.internetarchive import InternetArchiveClient, MovieAssetBundle
 from domain.schemas import IngestRequest, IngestResponse
 from features.ingest.service import IngestService
 from app.settings import AppSettings, get_settings

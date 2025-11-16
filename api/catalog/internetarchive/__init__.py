@@ -3,6 +3,8 @@ from .client import (
     InternetArchiveDownloadError,
     InternetArchiveSearchResult,
     MovieAssetBundle,
+    MovieDownloadOptions,
+    MovieSearchOptions,
 )
 
 __all__ = [
@@ -10,5 +12,7 @@ __all__ = [
     "InternetArchiveDownloadError",
     "InternetArchiveSearchResult",
     "MovieAssetBundle",
+    "MovieDownloadOptions",
+    "MovieSearchOptions",
 ]
 

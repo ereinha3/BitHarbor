@@ -87,7 +87,7 @@ result = client.download_audio(
 
 **Implementation:**
 ```python
-from api.internetarchive import InternetArchiveClient
+from api.catalog.internetarchive import InternetArchiveClient
 
 client = InternetArchiveClient()
 
@@ -681,7 +681,7 @@ curl -X POST http://localhost:8080/api/v1/movies/ingest/start \
 ### 2. Download from Internet Archive
 
 ```python
-from api.internetarchive import InternetArchiveClient
+from api.catalog.internetarchive import InternetArchiveClient
 from pathlib import Path
 
 client = InternetArchiveClient()

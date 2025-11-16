@@ -1,7 +1,11 @@
 from pathlib import Path
-from api.internetarchive import InternetArchiveClient
+from api.catalog.internetarchive import InternetArchiveClient, MovieDownloadOptions
 
 client = InternetArchiveClient()
 dest = Path("/home/ethan/downloads")  # choose your path
-client.download("fantastic-planet__1973", destination=dest, glob_pattern="*.mp4")
-print("Downloaded to:", dest)
+bundle = client.download_movie(
+    "fantastic-planet__1973",
+    destination=dest,
+    options=MovieDownloadOptions(include_subtitles=False),
+)
+print("Downloaded to:", bundle.video_path)

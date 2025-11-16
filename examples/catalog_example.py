@@ -28,18 +28,19 @@ async def search_example():
     """Example: Search Internet Archive for movies."""
     print("\n=== Searching Internet Archive ===")
 
-    from api.internetarchive import InternetArchiveClient
+    from api.catalog.internetarchive import InternetArchiveClient, MovieSearchOptions
 
     client = InternetArchiveClient()
 
     # Search for classic sci-fi films
-    results = list(
-        client.search_movies(
-            title="Metropolis",
-            rows=5,
+    results = client.search_movies(
+        title="Metropolis",
+        options=MovieSearchOptions(
+            limit=5,
             sorts=["downloads desc"],
             filters=["language:eng"],
-        )
+            include_metadata=True,
+        ),
     )
 
     print(f"\nFound {len(results)} results for 'Metropolis':\n")
@@ -47,7 +48,7 @@ async def search_example():
     for i, result in enumerate(results, 1):
         metadata = result.metadata.get("item_metadata", {}).get("metadata", {})
         year = metadata.get("year", "Unknown")
-        downloads = result.metadata.get("downloads", 0)
+        downloads = result.downloads or 0
 
         print(f"{i}. {result.title} ({year})")
         print(f"   Identifier: {result.identifier}")

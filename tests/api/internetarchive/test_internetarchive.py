@@ -8,11 +8,12 @@ import pytest
 pytestmark = pytest.mark.api_internetarchive
 
 import internetarchive as ia
-from api.internetarchive import (
+from api.catalog.internetarchive import (
     InternetArchiveClient,
     InternetArchiveDownloadError,
     InternetArchiveSearchResult,
     MovieAssetBundle,
+    MovieSearchOptions,
 )
 
 
@@ -79,20 +80,21 @@ def test_search_movies_returns_results(patch_get_session: DummySession) -> None:
     }
 
     client = InternetArchiveClient()
-    results = list(
-        client.search_movies(
-            "dogs",
-            rows=5,
-            enrich=True,
-            sorts=["downloads desc"],
-            filters=["language:eng"],
-        )
+    options = MovieSearchOptions(
+        limit=5,
+        include_metadata=True,
+        sorts=["downloads desc"],
+        filters=["language:eng"],
     )
+
+    results = client.search_movies("dogs", options=options)
 
     assert len(results) == 2
     assert results[0] == InternetArchiveSearchResult(
         identifier="item_one",
         title="First Item",
+        year=None,
+        downloads=42,
         metadata={
             **hits[0],
             "item_metadata": patch_get_session.items["item_one"],
@@ -116,58 +118,74 @@ def test_search_movies_builds_expected_query(patch_get_session: DummySession) ->
     }
 
     client = InternetArchiveClient()
-    results = list(client.search_movies("Fantastic Planet", rows=1, sorts=["downloads desc"]))
+    results = client.search_movies(
+        "Fantastic Planet",
+        options=MovieSearchOptions(limit=1, sorts=["downloads desc"], include_metadata=True),
+    )
 
     assert results[0].identifier == "fantasticplanet1973"
     assert patch_get_session.last_query == "(title:\"Fantastic Planet\") AND mediatype:(movies)"
     assert patch_get_session.last_params["rows"] == 1
 
 
-def test_download_prefers_http(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    calls: List[bool] = []
-
-    def fake_download(
-        identifier: str,
-        destdir: str,
-        *,
-        glob_pattern: str | None,
-        ignore_existing: bool,
-        checksum: bool,
-        retries: int | None,
-    ) -> None:
-        calls.append(True)
-        assert identifier == "example_item"
-        assert Path(destdir) == tmp_path
-        assert glob_pattern == "*.mp4"
-        assert ignore_existing is True
-        assert checksum is False
-        assert retries == 3
-        (Path(destdir) / "file.mp4").write_bytes(b"data")
-
-    monkeypatch.setattr(ia, "download", fake_download)
+def test_download_movie_downloads_selected_assets(tmp_path: Path, patch_get_session: DummySession) -> None:
+    identifier = "example_item"
+    metadata_payload = {
+        "metadata": {"title": "Example"},
+        "files": [
+            {"name": "Example.mp4", "source": "original"},
+            {"name": "Example_meta.xml"},
+            {"name": "__ia_thumb.jpg", "format": "Item Tile"},
+            {"name": "Example.srt"},
+        ],
+    }
+    patch_get_session.items = {identifier: metadata_payload}
 
     client = InternetArchiveClient()
-    dest = client.download(
-        "example_item",
-        destination=tmp_path,
-        glob_pattern="*.mp4",
-        retries=3,
-    )
+    bundle = client.download_movie(identifier, destination=tmp_path)
 
-    assert dest == tmp_path
-    assert calls == [True]
-    assert (tmp_path / "file.mp4").exists()
+    target_dir = tmp_path / identifier
+    assert patch_get_session.download_calls == [
+        {
+            "destdir": str(tmp_path),
+            "files": {
+                "Example.mp4": "Example.mp4",
+                "Example_meta.xml": "Example_meta.xml",
+                "__ia_thumb.jpg": "__ia_thumb.jpg",
+                "Example.srt": "Example.srt",
+            },
+            "ignore_existing": True,
+            "checksum": False,
+        }
+    ]
+    assert bundle.video_path == target_dir / "Example.mp4"
+    assert bundle.cover_art_path == target_dir / "__ia_thumb.jpg"
+    assert bundle.metadata_xml_path == target_dir / "Example_meta.xml"
+    assert bundle.subtitle_paths == (target_dir / "Example.srt",)
 
 
-def test_download_raises_when_all_strategies_fail(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    def failing_download(*args: Any, **kwargs: Any) -> None:  # noqa: ARG001
-        raise RuntimeError("failure")
+def test_download_movie_raises_on_failure(patch_get_session: DummySession, tmp_path: Path) -> None:
+    identifier = "broken_item"
+    patch_get_session.items = {
+        identifier: {
+            "metadata": {"title": "Broken"},
+            "files": [{"name": "Broken.mp4", "source": "original"}],
+        }
+    }
 
-    monkeypatch.setattr(ia, "download", failing_download)
+    class FailingItem(DummyDownloadableItem):
+        def download(self, *args: Any, **kwargs: Any) -> None:  # noqa: D401
+            raise RuntimeError("failure")
+
+    def failing_get_item(_identifier: str) -> DummyItem:
+        payload = patch_get_session.items.get(_identifier, {})
+        return FailingItem(payload, patch_get_session.download_calls)
+
+    patch_get_session.get_item = failing_get_item  # type: ignore[assignment]
 
     client = InternetArchiveClient()
     with pytest.raises(InternetArchiveDownloadError):
-        client.download("bad_item", destination=tmp_path)
+        client.download_movie(identifier, destination=tmp_path)
 
 
 def test_fetch_metadata_returns_payload(patch_get_session: DummySession) -> None:
@@ -215,6 +233,6 @@ def test_collect_movie_assets_selects_expected_files(tmp_path: Path, patch_get_s
     assert bundle.video_path == target_dir / "SampleFilm.mp4"
     assert bundle.cover_art_path == target_dir / "__ia_thumb.jpg"
     assert bundle.metadata_xml_path == target_dir / "SampleFilm_meta.xml"
-    assert bundle.subtitle_paths == [target_dir / "SampleFilm.srt"]
+    assert bundle.subtitle_paths == (target_dir / "SampleFilm.srt",)
     assert bundle.metadata == metadata_payload
 

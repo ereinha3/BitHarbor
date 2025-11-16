@@ -67,16 +67,16 @@ Use the Internet Archive client to pull a public-domain feature into a staging d
 ```bash
 python - <<'PY'
 from pathlib import Path
-from api.internetarchive import InternetArchiveClient
+from api.catalog.internetarchive import InternetArchiveClient, MovieDownloadOptions
 
 client = InternetArchiveClient()
 destination = Path('/tmp/ia-downloads')
 destination.mkdir(exist_ok=True, parents=True)
 
-bundle = client.collect_movie_assets(
+bundle = client.download_movie(
     'fantastic-planet-1973-restored-movie-720p-hd',
     destination=destination,
-    include_subtitles=True,
+    options=MovieDownloadOptions(include_subtitles=True),
 )
 print('Video:', bundle.video_path)
 print('Cover:', bundle.cover_art_path)
@@ -99,7 +99,7 @@ from pathlib import Path
 from uuid import uuid4
 from datetime import datetime
 
-from api.internetarchive import InternetArchiveClient
+from api.catalog.internetarchive import InternetArchiveClient, MovieDownloadOptions
 from infrastructure.storage.content_addressable import ContentAddressableStorage
 from infrastructure.embedding.imagebind_service import get_embedding_service
 from infrastructure.ann.service import get_ann_service
@@ -121,7 +121,11 @@ client = InternetArchiveClient()
 BUNDLE_ROOT = Path('/tmp/ia-downloads')
 IDENTIFIER = 'fantastic-planet-1973-restored-movie-720p-hd'
 
-bundle = client.collect_movie_assets(IDENTIFIER, destination=BUNDLE_ROOT, include_subtitles=True)
+bundle = client.download_movie(
+    IDENTIFIER,
+    destination=BUNDLE_ROOT,
+    options=MovieDownloadOptions(include_subtitles=True),
+)
 video_path = bundle.video_path
 cover_path = bundle.cover_art_path
 metadata_xml_path = bundle.metadata_xml_path

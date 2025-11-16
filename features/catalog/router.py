@@ -17,7 +17,7 @@ from domain.schemas import (
 )
 from features.auth.dependencies import get_current_admin
 from features.catalog.service import CatalogService, get_catalog_service
-from api.internetarchive import InternetArchiveClient
+from api.catalog.internetarchive import InternetArchiveClient, MovieSearchOptions
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
 
@@ -132,14 +132,15 @@ async def search_internet_archive(
         # Apply default sorting if not provided
         sorts = payload.sorts or ["downloads desc", "avg_rating desc"]
         
-        search_results = list(
-            ia_client.search_movies(
-                title=payload.query,
-                rows=payload.rows,
-                enrich=True,  # Fetch detailed metadata
-                sorts=sorts,
-                filters=payload.filters,
-            )
+        options = MovieSearchOptions(
+            limit=payload.rows,
+            include_metadata=True,
+            sorts=sorts,
+            filters=payload.filters,
+        )
+        search_results = ia_client.search_movies(
+            title=payload.query,
+            options=options,
         )
 
         # Map to response schema and deduplicate
