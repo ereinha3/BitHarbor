@@ -4,13 +4,23 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
+from pathlib import Path
+
+# Add project root to Python path
+project_root = Path(__file__).parent.parent.parent.parent
+sys.path.insert(0, str(project_root))
 
 from api.tmdb import TMDbClient
+
+# Get env variables from .env
+import dotenv
+dotenv.load_dotenv()
 
 
 async def test_search_movie():
     """Test movie search functionality."""
-    # Get API credentials from environment variables
+    # Get API credentials from .env
     api_key = os.getenv("TMDB_API_KEY", "")
     access_token = os.getenv("TMDB_ACCESS_TOKEN", "")
 
