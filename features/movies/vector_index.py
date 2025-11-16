@@ -9,9 +9,11 @@ import numpy as np
 from app.settings import get_settings
 from infrastructure.ann.diskann import DiskAnnIndex
 from infrastructure.ann.vector_store import VectorStore
+from infrastructure.embedding.sentence_bert_service import get_sentence_bert_service
 
 _settings = get_settings()
-_dim = _settings.embedding.dim
+_sentence_service = get_sentence_bert_service()
+_dim = _sentence_service.get_embedding_dimension()
 _metric = _settings.ann.metric
 _graph_degree = _settings.ann.graph_degree
 _complexity = _settings.ann.complexity

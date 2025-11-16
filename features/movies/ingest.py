@@ -9,7 +9,7 @@ from typing import Mapping
 
 from app.settings import get_settings
 from features.movies.vector_index import append as append_vector
-from infrastructure.embedding import get_embedding_service
+from infrastructure.embedding.sentence_bert_service import get_sentence_bert_service
 from utils.hashing import blake3_file
 
 
@@ -23,7 +23,7 @@ class MovieIngestResult:
 
 
 _settings = get_settings()
-_embedding_service = get_embedding_service()
+_text_embedding_service = get_sentence_bert_service()
 _raid_root = Path(os.environ.get("RAID_PATH", str(_settings.server.pool_root)))
 
 
@@ -46,24 +46,20 @@ def ingest_catalog_movie(*, video_path: Path, metadata: Mapping[str, object]) ->
     file_hash = blake3_file(video_path)
     stored_path = _store_video_on_raid(video_path, file_hash)
 
-    text_blob_parts = [
-        str(metadata.get("title", "")),
-        str(metadata.get("overview", "")),
-        json.dumps(metadata.get("genres", [])),
-    ]
-    text_blob = " ".join(filter(None, text_blob_parts)).strip()
+    title = str(metadata.get("title", "")).strip()
+    overview = str(metadata.get("overview", "")).strip()
+    genres = metadata.get("genres") or []
+    if isinstance(genres, (list, tuple)):
+        genres_text = " ".join(str(g) for g in genres if g)
+    else:
+        genres_text = str(genres)
+
+    components = [title, overview, genres_text]
+    text_blob = " ".join(filter(None, components)).strip()
     if not text_blob:
         text_blob = stored_path.stem.replace("_", " ")
 
-    poster_path = metadata.get("poster_path")
-    if poster_path:
-        poster_path = Path(poster_path)
-        if not poster_path.exists():
-            poster_path = None
-    else:
-        poster_path = None
-
-    embedding = _embedding_service.embed_catalog(text_blob=text_blob, poster_path=poster_path)
+    embedding = _text_embedding_service.encode(text_blob)
     vector_row_id = append_vector(embedding.vector)
 
     return MovieIngestResult(
