@@ -115,7 +115,7 @@ class MovieMetadata(BaseModel):
 
 
 class TvShowMetadata(BaseModel):
-    """Complete TV show metadata from enrichment."""
+    """Entire TV show metadata from enrichment. (not one episode)"""
     
     # IDs
     tmdb_id: Optional[int] = Field(None, description="TMDb TV show ID")
