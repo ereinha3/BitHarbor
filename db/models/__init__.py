@@ -10,6 +10,7 @@ from __future__ import annotations
 from .auth import Admin, Participant, AdminParticipantLink
 
 # Media models
+from .ann import IdMap
 from .movie import Movie
 from .tv import TvShow, TvSeason, TvEpisode
 from .music import MusicArtist, MusicAlbum, MusicTrack
@@ -22,6 +23,8 @@ __all__ = [
     "Admin",
     "Participant",
     "AdminParticipantLink",
+    # ANN
+    "IdMap",
     # Movies
     "Movie",
     # TV
