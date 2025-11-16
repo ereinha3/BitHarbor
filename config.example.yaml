@@ -22,14 +22,15 @@ embedding:
   round_eps: 1.0e-6
 
 ann:
-  type: hnsw
-  m: 32
-  ef_construction: 200
-  ef_search: 128
-  refine_candidates: 128
-  refine_top_k: 20
+  backend: diskann
+  metric: cosine
+  graph_degree: 64
+  complexity: 100
+  search_memory_budget: 2.0
+  num_threads: 0
+  rebuild_batch: 1
   vectors_path: /var/lib/bitharbor/index/vectors.fp32
-  index_path: /var/lib/bitharbor/index/hnsw.index
+  index_directory: /var/lib/bitharbor/index/diskann
 
 ingest:
   allow_ext:

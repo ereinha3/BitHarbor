@@ -1,12 +1,12 @@
 ## BitHarbor Backend
 
-BitHarbor is a local-first media server backend built with FastAPI. It keeps your personal media library searchable with multimodal ImageBind embeddings, a FAISS HNSW index, and SQLite persistence.
+BitHarbor is a local-first media server backend built with FastAPI. It keeps your personal media library searchable with multimodal ImageBind embeddings, a DiskANN-backed ANN index, and SQLite persistence.
 
 ### Features
 - Deterministic BLAKE3 hashing for files and embeddings
 - ImageBind `imagebind_huge` embeddings for text, images, and videos
 - Content-addressed storage layout on configurable pool disks
-- FAISS HNSW ANN index with SSD-backed vector store
+- DiskANN ANN index powered by the official C++/Rust backend
 - JWT-protected admin APIs with participant mapping
 - Ingest pipeline that hashes, stores, embeds, and indexes media
 - REST endpoints for search, metadata, and streaming
@@ -66,7 +66,7 @@ sudo systemctl enable --now bitharbor
 
 ### Development Notes
 - Database schema is generated automatically on startup (`SQLite + WAL`).
-- ANN index and vector store persist under `server.data_root`.
+- DiskANN index assets and vector store persist under `server.data_root`.
 - Tests can be added under `tests/` and run via `pytest` (dev extras include test tooling).
 
 ### Embedding Model

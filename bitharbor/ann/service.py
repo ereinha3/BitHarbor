@@ -37,6 +37,7 @@ class AnnService:
             num_threads=self.settings.ann.num_threads,
         )
         self.rebuild_batch = max(1, self.settings.ann.rebuild_batch)
+        self._pending_rebuild = False
         self._bootstrap_index()
 
     def _bootstrap_index(self) -> None:
