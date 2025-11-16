@@ -60,6 +60,13 @@ class IngestSettings(BaseModel):
     preview_seconds: int = 3
 
 
+class TMDbSettings(BaseModel):
+    api_key: str = ""
+    access_token: str = ""
+    language: str = "en-US"
+    include_adult: bool = False
+
+
 class AppSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="BITHARBOR_",
@@ -73,6 +80,7 @@ class AppSettings(BaseSettings):
     embedding: EmbeddingSettings = EmbeddingSettings()
     ann: AnnSettings = AnnSettings()
     ingest: IngestSettings = IngestSettings()
+    tmdb: TMDbSettings = TMDbSettings()
 
     def ensure_directories(self) -> None:
         self.server.data_root.mkdir(parents=True, exist_ok=True)
