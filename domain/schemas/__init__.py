@@ -1,4 +1,10 @@
 from .auth import AdminRead, AuthMeResponse, AuthSetupRequest, LoginRequest, TokenResponse
+from .catalog import (
+    CatalogSearchRequest,
+    CatalogSearchResponse,
+    CatalogSearchResult,
+    InternetArchiveIngestRequest,
+)
 from .enrichment import (
     CastMember,
     CrewMember,
@@ -26,6 +32,10 @@ __all__ = [
     "AuthSetupRequest",
     "LoginRequest",
     "TokenResponse",
+    "CatalogSearchRequest",
+    "CatalogSearchResponse",
+    "CatalogSearchResult",
+    "InternetArchiveIngestRequest",
     "CastMember",
     "CrewMember",
     "EnrichedMetadata",
