@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,7 +30,12 @@ from features.movies.download import (
     MovieCatalogDownloadService,
     get_movie_catalog_download_service,
 )
-from features.movies.search import MovieCatalogSearchService, get_movie_catalog_search_service
+from features.movies.ingest import ingest_catalog_movie
+from features.movies.search import (
+    MovieCatalogSearchService,
+    get_movie_catalog_search_service,
+    get_registered_match,
+)
 from features.search.service import SearchService, get_search_service
 
 router = APIRouter(prefix="/movies", tags=["movies"])
@@ -119,11 +126,54 @@ async def download_catalog_movie(
 
     destination_path = Path(payload.destination).expanduser().resolve() if payload.destination else None
 
+    if not payload.execute:
+        try:
+            return download_service.plan(payload.match_key, destination=destination_path)
+        except CatalogMatchNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
     try:
-        if payload.execute:
-            return download_service.download(payload.match_key, destination=destination_path)
-        return download_service.plan(payload.match_key, destination=destination_path)
+        download_result = download_service.download(payload.match_key, destination=destination_path)
     except CatalogMatchNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    match = get_registered_match(payload.match_key)
+    if match is None:
+        raise HTTPException(status_code=404, detail="Catalog match no longer available")
+
+    if not download_result.video_path:
+        raise HTTPException(status_code=500, detail="Download did not produce a video file")
+
+    poster_path: Path | None = None
+    if download_result.cover_art_file:
+        base_dir = Path(download_result.video_path).parent
+        candidate = base_dir / download_result.cover_art_file
+        if candidate.exists():
+            poster_path = candidate
+
+    metadata = {
+        "title": match.tmdb_movie.title,
+        "overview": match.tmdb_movie.overview,
+        "genres": match.tmdb_movie.genres,
+        "languages": match.tmdb_movie.languages,
+        "year": match.tmdb_movie.year,
+        "poster_path": str(poster_path) if poster_path else None,
+        "tmdb_id": match.tmdb_id,
+        "ia_identifier": match.best_candidate.identifier,
+        "ia_downloads": match.best_candidate.downloads,
+        "ia_score": match.best_candidate.score,
+    }
+
+    ingest_result = ingest_catalog_movie(
+        video_path=Path(download_result.video_path),
+        metadata=metadata,
+    )
+
+    download_result.file_hash = ingest_result.file_hash
+    download_result.vector_hash = ingest_result.vector_hash
+    download_result.vector_row_id = ingest_result.vector_row_id
+    return download_result

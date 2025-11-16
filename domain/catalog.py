@@ -183,3 +183,6 @@ class CatalogDownloadResponse(BaseModel):
     downloaded: bool = Field(default=False)
     video_path: Optional[str] = None
     subtitle_paths: list[str] = Field(default_factory=list)
+    file_hash: Optional[str] = None
+    vector_hash: Optional[str] = None
+    vector_row_id: Optional[int] = None
