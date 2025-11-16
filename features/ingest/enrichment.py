@@ -7,6 +7,12 @@ from typing import Any, Optional
 
 from api.tmdb import TMDbClient, TMDbMovie
 from app.settings import AppSettings, get_settings
+from domain.schemas.enrichment import (
+    CastMember,
+    CrewMember,
+    ImageMetadata,
+    MovieMetadata,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +24,8 @@ class EnrichmentResult:
         self.movie = movie
         self._client = client
 
-    def to_movie_dict(self) -> dict[str, Any]:
-        """Convert TMDb movie to database-compatible dictionary for Movie table."""
+    def to_movie_metadata(self) -> MovieMetadata:
+        """Convert TMDb movie to type-safe MovieMetadata Pydantic model."""
         # Parse release date
         release_date = None
         year = None
@@ -30,48 +36,165 @@ class EnrichmentResult:
             except (ValueError, AttributeError):
                 logger.warning(f"Invalid release date format: {self.movie.release_date}")
 
-        # Extract cast and crew
-        cast_data = []
-        crew_data = []
+        # Extract cast
+        cast = None
         if "credits" in self.movie.raw_data:
             credits = self.movie.raw_data["credits"]
             cast_data = credits.get("cast", [])[:20]  # Top 20 cast members
+            if cast_data:
+                cast = [
+                    CastMember(
+                        name=member.get("name", ""),
+                        character=member.get("character", ""),
+                        order=member.get("order", 999),
+                        profile_path=member.get("profile_path"),
+                    )
+                    for member in cast_data
+                    if member.get("name")
+                ]
+
+        # Extract crew
+        crew = None
+        if "credits" in self.movie.raw_data:
+            credits = self.movie.raw_data["credits"]
             crew_data = [
                 c for c in credits.get("crew", [])
                 if c.get("job") in ["Director", "Writer", "Producer", "Screenplay"]
             ]
+            if crew_data:
+                crew = [
+                    CrewMember(
+                        name=member.get("name", ""),
+                        job=member.get("job", ""),
+                        department=member.get("department", ""),
+                    )
+                    for member in crew_data
+                    if member.get("name") and member.get("job")
+                ]
 
         # Extract images
-        posters = []
-        backdrops = []
+        posters = None
+        backdrops = None
         if "images" in self.movie.raw_data:
             images = self.movie.raw_data["images"]
-            posters = images.get("posters", [])[:10]  # Top 10 posters
-            backdrops = images.get("backdrops", [])[:10]  # Top 10 backdrops
+            poster_data = images.get("posters", [])[:10]  # Top 10 posters
+            backdrop_data = images.get("backdrops", [])[:10]  # Top 10 backdrops
+            
+            if poster_data:
+                posters = [
+                    ImageMetadata(
+                        file_path=img.get("file_path", ""),
+                        width=img.get("width"),
+                        height=img.get("height"),
+                        aspect_ratio=img.get("aspect_ratio"),
+                        vote_average=img.get("vote_average"),
+                        vote_count=img.get("vote_count"),
+                        iso_639_1=img.get("iso_639_1"),
+                    )
+                    for img in poster_data
+                    if img.get("file_path")
+                ]
+            
+            if backdrop_data:
+                backdrops = [
+                    ImageMetadata(
+                        file_path=img.get("file_path", ""),
+                        width=img.get("width"),
+                        height=img.get("height"),
+                        aspect_ratio=img.get("aspect_ratio"),
+                        vote_average=img.get("vote_average"),
+                        vote_count=img.get("vote_count"),
+                        iso_639_1=img.get("iso_639_1"),
+                    )
+                    for img in backdrop_data
+                    if img.get("file_path")
+                ]
 
+        # Extract genres, languages, countries
+        genres = None
+        if self.movie.genres:
+            genres = [g.name for g in self.movie.genres]
+
+        languages = None
+        if self.movie.spoken_languages:
+            languages = [lang.english_name for lang in self.movie.spoken_languages]
+
+        countries = None
+        if self.movie.production_countries:
+            countries = [c.name for c in self.movie.production_countries]
+
+        # Get full URLs for poster and backdrop
+        poster_url = self.get_poster_url() if self.movie.poster_path else None
+        backdrop_url = self.get_backdrop_url() if self.movie.backdrop_path else None
+
+        return MovieMetadata(
+            tmdb_id=self.movie.id,
+            imdb_id=self.movie.imdb_id,
+            title=self.movie.title,
+            original_title=self.movie.original_title,
+            tagline=self.movie.tagline,
+            overview=self.movie.overview,
+            release_date=release_date,
+            year=year,
+            status=self.movie.status,
+            runtime_min=self.movie.runtime,
+            budget=self.movie.budget,
+            revenue=self.movie.revenue,
+            genres=genres,
+            languages=languages,
+            countries=countries,
+            vote_average=self.movie.vote_average,
+            vote_count=self.movie.vote_count,
+            popularity=self.movie.popularity,
+            cast=cast,
+            crew=crew,
+            poster_path=self.movie.poster_path,
+            backdrop_path=self.movie.backdrop_path,
+            posters=posters,
+            backdrops=backdrops,
+            poster_url=poster_url,
+            backdrop_url=backdrop_url,
+            homepage=self.movie.homepage,
+            adult=self.movie.adult,
+        )
+
+    def to_movie_dict(self) -> dict[str, Any]:
+        """Convert TMDb movie to database-compatible dictionary for Movie table.
+        
+        This method provides backward compatibility for database storage.
+        The metadata_enriched field stores the type-safe MovieMetadata as JSON.
+        """
+        # Get type-safe metadata
+        metadata = self.to_movie_metadata()
+        
+        # Convert to database format
         return {
-            "tmdb_id": self.movie.id,
-            "imdb_id": self.movie.imdb_id,
-            "title": self.movie.title,
-            "original_title": self.movie.original_title,
-            "year": year,
-            "release_date": release_date,
-            "runtime_min": self.movie.runtime,
-            "genres": "|".join(g.name for g in self.movie.genres) if self.movie.genres else None,
-            "languages": "|".join(
-                lang.english_name for lang in self.movie.spoken_languages
-            ) if self.movie.spoken_languages else None,
-            "countries": "|".join(
-                c.name for c in self.movie.production_countries
-            ) if self.movie.production_countries else None,
-            "overview": self.movie.overview,
-            "tagline": self.movie.tagline,
-            "cast_json": json.dumps(cast_data, ensure_ascii=False) if cast_data else None,
-            "crew_json": json.dumps(crew_data, ensure_ascii=False) if crew_data else None,
-            "posters_json": json.dumps(posters, ensure_ascii=False) if posters else None,
-            "backdrops_json": json.dumps(backdrops, ensure_ascii=False) if backdrops else None,
+            "tmdb_id": metadata.tmdb_id,
+            "imdb_id": metadata.imdb_id,
+            "title": metadata.title,
+            "original_title": metadata.original_title,
+            "year": metadata.year,
+            "release_date": metadata.release_date,
+            "runtime_min": metadata.runtime_min,
+            "genres": "|".join(metadata.genres) if metadata.genres else None,
+            "languages": "|".join(metadata.languages) if metadata.languages else None,
+            "countries": "|".join(metadata.countries) if metadata.countries else None,
+            "overview": metadata.overview,
+            "tagline": metadata.tagline,
+            "cast_json": json.dumps(
+                [member.dict() for member in metadata.cast], ensure_ascii=False
+            ) if metadata.cast else None,
+            "crew_json": json.dumps(
+                [member.dict() for member in metadata.crew], ensure_ascii=False
+            ) if metadata.crew else None,
+            "posters_json": json.dumps(
+                [img.dict() for img in metadata.posters], ensure_ascii=False
+            ) if metadata.posters else None,
+            "backdrops_json": json.dumps(
+                [img.dict() for img in metadata.backdrops], ensure_ascii=False
+            ) if metadata.backdrops else None,
             "metadata_raw": json.dumps(self.movie.raw_data, ensure_ascii=False),
-            "metadata_enriched": json.dumps(self.movie.raw_data, ensure_ascii=False),
+            "metadata_enriched": metadata.model_dump_json(),  # Store type-safe metadata as JSON
         }
 
     def get_poster_url(self, size: str = "w500") -> Optional[str]:

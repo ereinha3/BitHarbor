@@ -1,4 +1,15 @@
 from .auth import AdminRead, AuthMeResponse, AuthSetupRequest, LoginRequest, TokenResponse
+from .enrichment import (
+    CastMember,
+    CrewMember,
+    EnrichedMetadata,
+    ImageMetadata,
+    MovieMetadata,
+    MusicTrackMetadata,
+    PodcastEpisodeMetadata,
+    TvEpisodeMetadata,
+    TvShowMetadata,
+)
 from .participant import (
     ParticipantAssignmentRequest,
     ParticipantCreate,
@@ -15,6 +26,15 @@ __all__ = [
     "AuthSetupRequest",
     "LoginRequest",
     "TokenResponse",
+    "CastMember",
+    "CrewMember",
+    "EnrichedMetadata",
+    "ImageMetadata",
+    "MovieMetadata",
+    "MusicTrackMetadata",
+    "PodcastEpisodeMetadata",
+    "TvEpisodeMetadata",
+    "TvShowMetadata",
     "ParticipantAssignmentRequest",
     "ParticipantCreate",
     "ParticipantRead",

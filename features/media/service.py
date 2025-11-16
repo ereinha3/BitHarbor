@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -11,8 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from db.models import MediaCore, Movie, PersonalMedia
+from domain.schemas.enrichment import EnrichedMetadata, MovieMetadata
 from domain.schemas.media import MediaDetail, MediaListResponse, MediaSummary
 from domain.schemas.ingest import MediaTypeLiteral
+
+logger = logging.getLogger(__name__)
 
 
 class MediaService:
@@ -41,6 +45,7 @@ class MediaService:
     ) -> MediaDetail:
         media = await self.get_media(session, media_id)
         metadata = self._extract_metadata(media)
+        enriched_metadata = self._extract_enriched_metadata(media)
         title = self._resolve_title(media)
         return MediaDetail(
             media_id=media.media_id,
@@ -50,6 +55,7 @@ class MediaService:
             vector_hash=media.vector_hash,
             file_hash=media.file_hash,
             metadata=metadata,
+            enriched_metadata=enriched_metadata,
         )
 
     async def list_media(
@@ -97,11 +103,37 @@ class MediaService:
         )
 
     def _extract_metadata(self, media: MediaCore) -> Optional[Dict[str, Any]]:
+        """Extract raw metadata from database (legacy field)."""
         if media.movie and media.movie.metadata_enriched:
             try:
                 return json.loads(media.movie.metadata_enriched)
             except json.JSONDecodeError:
                 return None
+        return None
+
+    def _extract_enriched_metadata(self, media: MediaCore) -> Optional[EnrichedMetadata]:
+        """Extract and parse type-safe enriched metadata.
+        
+        Parses the metadata_enriched JSON field and validates it against
+        the appropriate Pydantic schema based on media type.
+        """
+        try:
+            if media.type == "movie" and media.movie:
+                if media.movie.metadata_enriched:
+                    # Parse JSON and validate as MovieMetadata
+                    movie_data = json.loads(media.movie.metadata_enriched)
+                    movie_metadata = MovieMetadata(**movie_data)
+                    return EnrichedMetadata(movie=movie_metadata)
+            
+            # Add other media types here when their enrichment is implemented
+            # elif media.type == "tv" and media.tv_episode:
+            #     ...
+            
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse metadata_enriched JSON for {media.media_id}: {e}")
+        except Exception as e:
+            logger.warning(f"Failed to validate enriched metadata for {media.media_id}: {e}")
+        
         return None
 
     def _resolve_title(self, media: MediaCore) -> str:
