@@ -29,6 +29,7 @@ import features.movies.vector_index as movie_index_module
 reload(movie_index_module)
 from features.movies import ingest as movie_ingest_module
 reload(movie_ingest_module)
+from db.session import SessionLocal
 from features.movies.ingest import ingest_catalog_movie
 from features.movies.search import MovieCatalogSearchService, clear_registered_matches
 from features.movies.download import MovieCatalogDownloadService
@@ -74,7 +75,13 @@ async def main():
         'ia_score': match.best_candidate.score,
     }
 
-    result = ingest_catalog_movie(video_path=Path(download_result.video_path), metadata=metadata)
+    async with SessionLocal() as session:
+        result = await ingest_catalog_movie(
+            session=session,
+            video_path=Path(download_result.video_path),
+            metadata=metadata,
+        )
+        await session.commit()
     print('Ingest result:', result)
 
     vectors_path = movie_index._vectors_path

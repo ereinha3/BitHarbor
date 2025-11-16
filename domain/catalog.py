@@ -186,3 +186,5 @@ class CatalogDownloadResponse(BaseModel):
     file_hash: Optional[str] = None
     vector_hash: Optional[str] = None
     vector_row_id: Optional[int] = None
+    movie_id: Optional[int] = None
+    created: Optional[bool] = None
