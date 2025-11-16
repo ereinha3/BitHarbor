@@ -3,11 +3,14 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
 
 import httpx
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from domain.media.movies import MovieMedia
 
 
 @dataclass(slots=True, frozen=True)
@@ -27,6 +30,15 @@ class TMDbSearchResult:
     adult: bool
     original_language: str
     genre_ids: list[int]
+
+
+@dataclass(slots=True, frozen=True)
+class TMDbMovieMatch:
+    """Movie search result paired with normalized metadata."""
+
+    tmdb_id: int
+    movie: "MovieMedia"
+    raw: TMDbSearchResult
 
 
 @dataclass(slots=True, frozen=True)
@@ -256,28 +268,56 @@ class TMDbClient:
             params["region"] = region
 
         data = await self._request("GET", "search/movie", params)
-        results = []
-        
-        for item in data.get("results", []):
-            results.append(
-                TMDbSearchResult(
-                    id=item["id"],
-                    title=item.get("title", ""),
-                    original_title=item.get("original_title", ""),
-                    release_date=item.get("release_date"),
-                    overview=item.get("overview"),
-                    poster_path=item.get("poster_path"),
-                    backdrop_path=item.get("backdrop_path"),
-                    popularity=item.get("popularity", 0.0),
-                    vote_average=item.get("vote_average", 0.0),
-                    vote_count=item.get("vote_count", 0),
-                    adult=item.get("adult", False),
-                    original_language=item.get("original_language", ""),
-                    genre_ids=item.get("genre_ids", []),
-                )
-            )
-        
-        return results
+        return [self._parse_movie_search_result(item) for item in data.get("results", [])]
+
+    async def search_movies_with_metadata(
+        self,
+        query: str,
+        *,
+        limit: int = 10,
+        year: Optional[int] = None,
+        primary_release_year: Optional[int] = None,
+        include_adult: bool = False,
+        region: Optional[str] = None,
+        language: str = "en-US",
+    ) -> list[TMDbMovieMatch]:
+        """Search TMDb and map results into MovieMedia instances."""
+
+        matches: list[TMDbMovieMatch] = []
+        page = 1
+
+        while len(matches) < limit:
+            params: dict[str, Any] = {
+                "query": query,
+                "page": page,
+                "include_adult": include_adult,
+                "language": language,
+            }
+            if year is not None:
+                params["year"] = year
+            if primary_release_year is not None:
+                params["primary_release_year"] = primary_release_year
+            if region is not None:
+                params["region"] = region
+
+            data = await self._request("GET", "search/movie", params)
+            results = data.get("results", [])
+            if not results:
+                break
+
+            for item in results:
+                parsed = self._parse_movie_search_result(item)
+                movie = self._movie_media_from_search_result(parsed)
+                matches.append(TMDbMovieMatch(tmdb_id=parsed.id, movie=movie, raw=parsed))
+                if len(matches) >= limit:
+                    break
+
+            total_pages = data.get("total_pages") or 1
+            if page >= total_pages:
+                break
+            page += 1
+
+        return matches
 
     async def get_movie_details(
         self,
@@ -542,6 +582,70 @@ class TMDbClient:
             return None
         return f"{self.IMAGE_BASE_URL}{size}{path}"
 
+    def _parse_movie_search_result(self, item: dict[str, Any]) -> TMDbSearchResult:
+        return TMDbSearchResult(
+            id=item.get("id"),
+            title=item.get("title", ""),
+            original_title=item.get("original_title", ""),
+            release_date=item.get("release_date"),
+            overview=item.get("overview"),
+            poster_path=item.get("poster_path"),
+            backdrop_path=item.get("backdrop_path"),
+            popularity=item.get("popularity", 0.0),
+            vote_average=item.get("vote_average", 0.0),
+            vote_count=item.get("vote_count", 0),
+            adult=item.get("adult", False),
+            original_language=item.get("original_language", ""),
+            genre_ids=item.get("genre_ids", []) or [],
+        )
+
+    def _movie_media_from_search_result(self, result: TMDbSearchResult) -> "MovieMedia":
+        from domain.media.base import ImageMetadata
+        from domain.media.movies import MovieMedia
+
+        release_date = None
+        year = None
+        if result.release_date:
+            try:
+                release_date = datetime.fromisoformat(result.release_date)
+                year = release_date.year
+            except (ValueError, TypeError):
+                logger.debug("Unable to parse release date %s", result.release_date)
+
+        poster = None
+        poster_url = self.get_image_url(result.poster_path, size="w500")
+        if poster_url:
+            poster = ImageMetadata(file_path=poster_url, width=None, height=None, aspect_ratio=None)
+
+        backdrop = None
+        backdrop_url = self.get_image_url(result.backdrop_path, size="original")
+        if backdrop_url:
+            backdrop = ImageMetadata(file_path=backdrop_url, width=None, height=None, aspect_ratio=None)
+
+        languages = [result.original_language] if result.original_language else None
+
+        return MovieMedia(
+            file_hash=None,
+            embedding_hash=None,
+            path=None,
+            media_type="movie",
+            format=None,
+            title=result.title or result.original_title,
+            tagline=None,
+            overview=result.overview,
+            release_date=release_date,
+            year=year,
+            runtime_min=None,
+            genres=None,
+            languages=languages,
+            vote_average=result.vote_average,
+            vote_count=result.vote_count,
+            cast=None,
+            rating="adult" if result.adult else None,
+            poster=poster,
+            backdrop=backdrop,
+        )
+
     def to_movie_media(
         self,
         tmdb_movie: TMDbMovie,
@@ -562,7 +666,8 @@ class TMDbClient:
         Returns:
             MovieMedia instance with coerced types
         """
-        from domain.media import MovieMedia, ImageMedia
+        from domain.media.base import ImageMetadata
+        from domain.media.movies import MovieMedia
         
         # Parse release date
         release_date = None
@@ -595,7 +700,7 @@ class TMDbClient:
         # Create poster and backdrop metadata
         poster = None
         if tmdb_movie.poster_path:
-            poster = ImageMedia(
+            poster = ImageMetadata(
                 file_path=self.get_image_url(tmdb_movie.poster_path, size="w500") or tmdb_movie.poster_path,
                 width=None,
                 height=None,
@@ -604,7 +709,7 @@ class TMDbClient:
         
         backdrop = None
         if tmdb_movie.backdrop_path:
-            backdrop = ImageMedia(
+            backdrop = ImageMetadata(
                 file_path=self.get_image_url(tmdb_movie.backdrop_path, size="original") or tmdb_movie.backdrop_path,
                 width=None,
                 height=None,
@@ -615,7 +720,7 @@ class TMDbClient:
             file_hash=file_hash,
             embedding_hash=embedding_hash,
             path=path,
-            type="movie",
+            media_type="movie",
             format=file_format,
             title=tmdb_movie.title,
             tagline=tmdb_movie.tagline,
@@ -653,7 +758,8 @@ class TMDbClient:
         Returns:
             TvShowMedia instance with coerced types
         """
-        from domain.media import TvShowMedia, ImageMedia
+        from domain.media.base import ImageMetadata
+        from domain.media.tv import TvShowMedia
         
         # Parse air dates
         first_air_date = None
@@ -691,7 +797,7 @@ class TMDbClient:
         # Create poster and backdrop metadata
         poster = None
         if tmdb_tv.poster_path:
-            poster = ImageMedia(
+            poster = ImageMetadata(
                 file_path=self.get_image_url(tmdb_tv.poster_path, size="w500") or tmdb_tv.poster_path,
                 width=None,
                 height=None,
@@ -700,7 +806,7 @@ class TMDbClient:
         
         backdrop = None
         if tmdb_tv.backdrop_path:
-            backdrop = ImageMedia(
+            backdrop = ImageMetadata(
                 file_path=self.get_image_url(tmdb_tv.backdrop_path, size="original") or tmdb_tv.backdrop_path,
                 width=None,
                 height=None,
@@ -711,7 +817,7 @@ class TMDbClient:
             file_hash=file_hash,
             embedding_hash=embedding_hash,
             path=path,
-            type="tv",
+            media_type="tv",
             format=file_format,
             name=tmdb_tv.name,
             overview=tmdb_tv.overview,
